@@ -216,16 +216,64 @@ function TripGroup({ rows, title }) {
       <div className="groupTitle">{title}</div>
       <div className="dataTable tripsTable">
         {rows.map((booking) => (
-          <div className={`tableRow tripRow ${booking.group}`} key={booking.id}>
-            <span className="mainCell">
-              {booking.name}
-              {booking.coordinator && <span className="coordinatorName">{booking.coordinator}</span>}
-            </span>
-            <span>{booking.startDate}</span>
-            <ExternalLink href={booking.stackerUrl} label="Open booking" />
-          </div>
+          <BookingRow key={booking.id} booking={booking} />
         ))}
       </div>
+    </div>
+  );
+}
+
+function BookingRow({ booking }) {
+  const [expanded, setExpanded] = useState(false);
+  const [notes, setNotes] = useState(booking.notes || '');
+  const [saveStatus, setSaveStatus] = useState(null);
+
+  async function handleSave() {
+    setSaveStatus('saving');
+    try {
+      const res = await fetch('/api/airtable', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ bookingId: booking.id, notes }),
+      });
+      if (!res.ok) throw new Error('Failed');
+      setSaveStatus('saved');
+      setTimeout(() => setSaveStatus(null), 2000);
+    } catch {
+      setSaveStatus('error');
+    }
+  }
+
+  const saveLabel = saveStatus === 'saving' ? 'Saving...' : saveStatus === 'saved' ? 'Saved' : saveStatus === 'error' ? 'Error' : 'Save';
+
+  return (
+    <div className="bookingRowWrapper">
+      <div className={`tableRow tripRow ${booking.group}`}>
+        <span className="mainCell">
+          {booking.name}
+          {booking.coordinator && <span className="coordinatorName">{booking.coordinator}</span>}
+        </span>
+        <span>{booking.startDate}</span>
+        <div className="rowActions">
+          <button className="chevronButton" onClick={() => setExpanded(!expanded)} title="Booking notes">
+            {expanded ? '▲' : '▼'}
+          </button>
+          <ExternalLink href={booking.stackerUrl} label="Open booking" />
+        </div>
+      </div>
+      {expanded && (
+        <div className="notesPanel">
+          <textarea
+            className="notesTextarea"
+            placeholder="Booking Notes"
+            value={notes}
+            onChange={(e) => setNotes(e.target.value)}
+          />
+          <button className="saveNotesButton" disabled={saveStatus === 'saving'} onClick={handleSave}>
+            {saveLabel}
+          </button>
+        </div>
+      )}
     </div>
   );
 }

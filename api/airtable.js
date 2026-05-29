@@ -33,6 +33,21 @@ const OPEN_LEAD_STATUSES = [
 ];
 
 export default async function handler(req, res) {
+  if (req.method === 'POST') {
+    const { bookingId, notes } = req.body || {};
+    if (!bookingId) return sendJson(res, 400, { error: 'Missing bookingId' });
+    if (!AIRTABLE_API_KEY || !AIRTABLE_BASE_ID || !TABLE_BOOKINGS) {
+      return sendJson(res, 500, { error: 'Airtable environment variables are not configured' });
+    }
+    try {
+      const base = new Airtable({ apiKey: AIRTABLE_API_KEY }).base(AIRTABLE_BASE_ID);
+      await base(TABLE_BOOKINGS).update(bookingId, { 'Booking Notes': notes || '' });
+      return sendJson(res, 200, { ok: true });
+    } catch (error) {
+      return sendJson(res, 500, { error: 'Failed to save notes', details: getErrorMessage(error) });
+    }
+  }
+
   if (req.method !== 'GET') {
     return sendJson(res, 405, { error: 'Method Not Allowed' });
   }
@@ -196,6 +211,7 @@ function shapeBookings(records, tripMap, coordinatorMap) {
       id: record.id,
       name: firstValue(tripFields['Trip Title & Code']) || firstValue(fields['Trip Title']) || firstValue(fields['Booking ID']) || 'Trip not set',
       coordinator: coordinatorMap.get(trip?.id) || '',
+      notes: firstValue(fields['Booking Notes']) || '',
       startDate: formatShortDate(startDateRaw),
       endDate: formatShortDate(endDateRaw),
       startTimestamp: startDate?.getTime() || 0,
