@@ -236,11 +236,13 @@ function BookingRow({ booking }) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ bookingId: booking.id, notes }),
       });
-      if (!res.ok) throw new Error('Failed');
+      const body = await res.json();
+      if (!res.ok) throw new Error(body.details || body.error || 'Failed');
       setSaveStatus('saved');
       setTimeout(() => setSaveStatus(null), 2000);
-    } catch {
+    } catch (err) {
       setSaveStatus('error');
+      console.error('Save failed:', err.message);
     }
   }
 
