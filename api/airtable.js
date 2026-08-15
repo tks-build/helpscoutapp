@@ -11,6 +11,9 @@ const {
   TABLE_LEADS,
   AIRTABLE_CUSTOMERS_EMAIL_FIELD = 'Client Email',
   CALENDLY_URLS,
+  // Base URL of whichever CRM is current. Stacker today, TRTL later — swapping
+  // the two is an environment variable change, not a code change.
+  CRM_BASE_URL = 'https://leatherbacktravel.stackerhq.com',
 } = process.env;
 
 let calendlyMap = {};
@@ -19,6 +22,81 @@ try {
 } catch {
   console.warn('CALENDLY_URLS is not valid JSON');
 }
+
+/**
+ * Every Airtable field name the app reads, in one place.
+ *
+ * If a field is renamed in Airtable, change it here and nowhere else. Names
+ * marked TODO are ones I guessed from screenshots — please correct them.
+ * A wrong name fails quietly (the value renders empty), it will not error.
+ */
+const FIELDS = {
+  customer: {
+    email: AIRTABLE_CUSTOMERS_EMAIL_FIELD,
+    preferredName: 'Preferred Name',
+    dob: 'DOB',
+    age: 'Age',
+    phone: 'Phone Number',
+    state: 'State',
+    country: 'Country',
+    // Optional. An IANA zone name such as "America/Los_Angeles". When present
+    // it wins over the state/country lookup, which removes the guesswork for
+    // guests in countries that span several zones. Safe to leave uncreated —
+    // the panel falls back to state/country.
+    timezone: 'Time-zone',
+    clientFlag: 'Client Flag',
+    notAFit: 'Not a Fit',
+    // Auto-rendered into the amber "must know" block whenever populated.
+    dietary: 'Dietary Restrictions',
+    medical: 'Medical & Other',
+    // SF card, in render order: pinned (human, capped at 5) -> about guest
+    // (human, verbatim) -> summary (machine, overwritten weekly).
+    aboutGuest: 'About Guest', // TODO confirm exact name
+    sfPinned: 'SF Pinned', // TODO create in Airtable
+    sfSummary: 'SF Summary', // TODO create in Airtable
+    sfSummaryUpdated: 'SF Summary Updated', // TODO create in Airtable
+    fitnessLevel: 'Fitness Level',
+    fitnessNotes: 'Fitness Level Notes',
+    fitnessFromGuest: 'Fitness Details from Guest',
+    hikingFitness: 'Hiking Fitness Level',
+    frequentTravelFriends: 'Frequent Travel Friends',
+  },
+  booking: {
+    notes: 'Booking Notes',
+    bookingType: 'Booking Type',
+    roommateRequest: 'Roommate Request',
+    bookingThroughAgent: 'Booking through Agent',
+    // Ops requested these directly beneath Booking Notes on upcoming trips.
+    coordDecision: 'Coord Decision',
+    lastChased: 'Last Chased',
+    lastChasedNotes: 'Last Chased Notes',
+    // Post-trip feedback. Shown on past bookings only.
+    internalRating: 'Internal Rating out of 5',
+    groupDynamicsRating: 'Group Dynamics Rating out of 5 (by guest)',
+    feedbackCallDate: 'Feedback Call Date',
+    feedbackCallHeldBy: 'Feedback Call Held By',
+    feedbackSummary: 'Summary (Summary & Other Feedback)',
+  },
+};
+
+/** Shown when a past booking row is expanded. Order is the render order. */
+const FEEDBACK_SUMMARY_FIELDS = [
+  ['guide', 'Summary of Guide Feedback'],
+  ['accommodation', 'Summary of Accommodation Feedback'],
+  ['food', 'Summary of Food Feedback'],
+  ['activities', 'Summary of Activities Feedback'],
+];
+
+/** Candidates for pinning up into Flag Notes — "critical" pre-sorts these. */
+const FEEDBACK_CRITICAL_FIELDS = [
+  ['guides', 'Guides Critical Feedback'],
+  ['accommodation', 'Accommodation Critical Feedback'],
+  ['food', 'Food Critical Feedback'],
+  ['activities', 'Activities Critical Feedback'],
+  ['pacing', 'Pacing Critical Feedback'],
+  ['suggestions', 'Guest Suggestions Critical Feedback'],
+  ['other', 'Other Comments Critical Feedback'],
+];
 
 const OPEN_LEAD_STATUSES = [
   'Future Interest',
@@ -41,7 +119,7 @@ export default async function handler(req, res) {
     }
     try {
       const base = new Airtable({ apiKey: AIRTABLE_API_KEY }).base(AIRTABLE_BASE_ID);
-      await base(TABLE_BOOKINGS).update(bookingId, { 'Booking Notes': notes || '' });
+      await base(TABLE_BOOKINGS).update(bookingId, { [FIELDS.booking.notes]: notes || '' });
       return sendJson(res, 200, { ok: true });
     } catch (error) {
       return sendJson(res, 500, { error: 'Failed to save notes', details: getErrorMessage(error) });
@@ -131,19 +209,104 @@ async function shapeProfile(base, customer, email, mailboxId) {
     }
   }
 
+  const C = FIELDS.customer;
+  const shapedBookings = shapeBookings(bookings, tripMap, coordinatorMap);
+
   const shapedCustomer = {
     id: customer.id,
     fields,
     matchedEmail: email,
-    stackerUrl: `https://leatherbacktravel.stackerhq.com/crm/customers/view/cus_${customer.id}`,
+    crmUrl: `${CRM_BASE_URL}/crm/customers/view/cus_${customer.id}`,
     calendlyUrl: buildCalendlyUrl(mailboxId, fields['Client Email'] || email),
+
+    // --- SF "Good to know" card -------------------------------------------
+    sf: {
+      // Human, curated, capped at 5 by the UI. Never touched by the weekly job.
+      pinned: splitLines(fields[C.sfPinned]),
+      // Human, verbatim. Also an input to the weekly generator.
+      aboutGuest: firstValue(fields[C.aboutGuest]),
+      // Machine, overwritten weekly.
+      summary: firstValue(fields[C.sfSummary]),
+      summaryUpdated: formatShortDate(fields[C.sfSummaryUpdated]),
+    },
+
+    // --- amber "must know" block ------------------------------------------
+    // These are already curated in the CRM, so they render automatically
+    // rather than needing a human to pin them.
+    flags: {
+      clientFlag: firstValue(fields[C.clientFlag]),
+      dietary: firstValue(fields[C.dietary]),
+      medical: firstValue(fields[C.medical]),
+      notAFit: Boolean(fields[C.notAFit]),
+    },
+
+    // --- everything the SF grid shows -------------------------------------
+    profile: {
+      preferredName: firstValue(fields[C.preferredName]),
+      dob: formatShortDate(fields[C.dob]),
+      age: firstValue(fields[C.age]),
+      phone: firstValue(fields[C.phone]),
+      state: firstValue(fields[C.state]),
+      country: firstValue(fields[C.country]),
+      timezone: firstValue(fields[C.timezone]),
+      frequentTravelFriends: firstValue(fields[C.frequentTravelFriends]),
+      // Per-booking in Airtable, but a BM about to dial needs to know before
+      // they dial — so it is surfaced here if any live trip is agent-booked.
+      viaAgent: [...(shapedBookings.upcoming || []), ...(shapedBookings.active || [])]
+        .some((booking) => booking.viaAgent),
+      fitnessLevel: firstValue(fields[C.fitnessLevel]),
+      fitnessNotes: firstValue(fields[C.fitnessNotes]),
+      fitnessFromGuest: firstValue(fields[C.fitnessFromGuest]),
+      hikingFitness: firstValue(fields[C.hikingFitness]),
+    },
+
+    // Stats for the SF tiles. Derived, so they cannot drift from the trip list.
+    stats: buildStats(shapedBookings),
+
+    // The BM(s) running this guest's upcoming trips. Falls back to the most
+    // recent past coordinator, flagged so the UI can label it differently.
+    bookingManagers: buildBookingManagers(shapedBookings),
   };
 
   return {
     customer: shapedCustomer,
     leads: shapeLeads(leads, tripMap),
-    bookings: shapeBookings(bookings, tripMap, coordinatorMap),
+    bookings: shapedBookings,
   };
+}
+
+function buildStats(bookings) {
+  const completed = [...(bookings.past || []), ...(bookings.active || [])];
+  const rated = completed.map((b) => b.feedback?.internalRating).filter((n) => typeof n === 'number');
+  const average = rated.length ? rated.reduce((sum, n) => sum + n, 0) / rated.length : null;
+
+  return {
+    tripsDone: (bookings.past || []).length,
+    upcoming: (bookings.upcoming || []).length,
+    cancelled: (bookings.cancelled || []).length,
+    avgRating: average === null ? null : Math.round(average * 10) / 10,
+    ratedCount: rated.length,
+  };
+}
+
+function buildBookingManagers(bookings) {
+  const upcoming = unique((bookings.upcoming || []).map((b) => b.coordinator));
+  if (upcoming.length) return { names: upcoming, current: true };
+
+  const active = unique((bookings.active || []).map((b) => b.coordinator));
+  if (active.length) return { names: active, current: true };
+
+  // No live trip — show who ran the last one, but let the UI say so.
+  const previous = (bookings.past || []).map((b) => b.coordinator).filter(Boolean);
+  return { names: previous.length ? [previous[0]] : [], current: false };
+}
+
+/** Long-text fields hold one pinned item per line. */
+function splitLines(value) {
+  return String(firstValue(value) || '')
+    .split('\n')
+    .map((line) => line.trim())
+    .filter(Boolean);
 }
 
 async function fetchAllRecords(base, tableName) {
@@ -186,7 +349,7 @@ function shapeLeads(records, tripMap) {
         trip: firstValue(trip?.fields['Trip Title & Code']) || firstValue(fields['D-Future-Trip-Requests']) || formatValue(fields['D-Future-Trip-Tags']) || 'Trip not set',
         dateAdded: formatShortDate(dateRaw),
         dateAddedTimestamp: parseDate(dateRaw)?.getTime() || 0,
-        stackerUrl: `https://leatherbacktravel.stackerhq.com/crm/booking-crm/view/bcr_${record.id}`,
+        crmUrl: `${CRM_BASE_URL}/crm/booking-crm/view/bcr_${record.id}`,
         futureTripRequests: firstValue(fields['D-Future-Trip-Requests']) || formatValue(fields['D-Future-Trip-Tags']),
       };
     })
@@ -207,17 +370,32 @@ function shapeBookings(records, tripMap, coordinatorMap) {
     const cancelled = Boolean(fields.Cancelled);
     const group = getBookingGroup({ cancelled, startDate, endDate, today });
 
+    const B = FIELDS.booking;
+
     return {
       id: record.id,
       name: firstValue(tripFields['Trip Title & Code']) || firstValue(fields['Trip Title']) || firstValue(fields['Booking ID']) || 'Trip not set',
       coordinator: coordinatorMap.get(trip?.id) || '',
-      notes: firstValue(fields['Booking Notes']) || '',
+      notes: firstValue(fields[B.notes]) || '',
       startDate: formatShortDate(startDateRaw),
       endDate: formatShortDate(endDateRaw),
       startTimestamp: startDate?.getTime() || 0,
       endTimestamp: endDate?.getTime() || 0,
       group,
-      stackerUrl: `https://leatherbacktravel.stackerhq.com/crm/bookings/view/boo_${record.id}`,
+      crmUrl: `${CRM_BASE_URL}/crm/bookings/view/boo_${record.id}`,
+
+      bookingType: firstValue(fields[B.bookingType]),
+      roommateRequest: firstValue(fields[B.roommateRequest]),
+      viaAgent: Boolean(fields[B.bookingThroughAgent]),
+
+      // Ops fields. Rendered under Booking Notes on upcoming trips only.
+      ops: {
+        coordDecision: firstValue(fields[B.coordDecision]),
+        lastChased: formatShortDate(fields[B.lastChased]),
+        lastChasedNotes: firstValue(fields[B.lastChasedNotes]),
+      },
+
+      feedback: shapeFeedback(fields),
     };
   });
 
@@ -227,6 +405,53 @@ function shapeBookings(records, tripMap, coordinatorMap) {
     past: rows.filter((row) => row.group === 'past').sort((a, b) => b.endTimestamp - a.endTimestamp),
     cancelled: rows.filter((row) => row.group === 'cancelled').sort((a, b) => b.startTimestamp - a.startTimestamp),
   };
+}
+
+/**
+ * Post-trip feedback for one booking.
+ *
+ * `summary` and the ratings show on the collapsed row; `summaries` and
+ * `critical` appear when it is expanded. `critical` entries are the ones a BM
+ * can pin up into Flag Notes, which is why they are kept separate.
+ *
+ * Returns null when a feedback call has not happened, so the UI can skip the
+ * block entirely rather than render empty labels.
+ */
+function shapeFeedback(fields) {
+  const B = FIELDS.booking;
+
+  const summaries = FEEDBACK_SUMMARY_FIELDS
+    .map(([key, name]) => ({ key, label: name.replace(/^Summary of /, '').replace(/ Feedback$/, ''), text: firstValue(fields[name]) }))
+    .filter((item) => item.text);
+
+  const critical = FEEDBACK_CRITICAL_FIELDS
+    .map(([key, name]) => ({ key, label: name.replace(/ Critical Feedback$/, ''), text: firstValue(fields[name]) }))
+    .filter((item) => item.text);
+
+  const feedback = {
+    internalRating: toNumber(fields[B.internalRating]),
+    groupDynamicsRating: toNumber(fields[B.groupDynamicsRating]),
+    callDate: formatShortDate(fields[B.feedbackCallDate]),
+    callHeldBy: firstValue(fields[B.feedbackCallHeldBy]),
+    summary: firstValue(fields[B.feedbackSummary]),
+    summaries,
+    critical,
+  };
+
+  const hasAnything = feedback.internalRating !== null
+    || feedback.groupDynamicsRating !== null
+    || feedback.summary
+    || summaries.length
+    || critical.length;
+
+  return hasAnything ? feedback : null;
+}
+
+function toNumber(value) {
+  const raw = firstValue(value);
+  if (raw === '') return null;
+  const parsed = Number(raw);
+  return Number.isFinite(parsed) ? parsed : null;
 }
 
 function getBookingGroup({ cancelled, startDate, endDate, today }) {

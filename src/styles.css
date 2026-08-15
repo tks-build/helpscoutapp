@@ -1,3 +1,51 @@
+/**
+ * TRTL visual language, sampled from the CRM.
+ *
+ * Typography is deliberately NOT set here — the app renders <DefaultStyle />
+ * from @helpscout/ui-kit, so the panel inherits Help Scout's own type stack
+ * and stays consistent with the rest of the page.
+ *
+ * Spacing was tightened throughout this pass: trip rows 10px -> 7px, row gaps
+ * 7px -> 4px, and the notes panel now sits flush against its row instead of
+ * floating, with Save inline rather than on its own line.
+ */
+
+:root {
+  --trtl-ink: #1b211e;
+  --trtl-ink-2: #3c443e;
+  --trtl-muted: #767a6f;
+  --trtl-muted-2: #9a9e92;
+
+  --trtl-green: #0e5c48;
+  --trtl-green-hi: #14755c;
+  --trtl-green-soft: #e7f1ec;
+  --trtl-green-line: #cbe2d7;
+  --trtl-teal: #17a398;
+
+  --trtl-surface: #ffffff;
+  --trtl-surface-2: #fcfcfa;
+  --trtl-line: #e5e3da;
+  --trtl-line-soft: #efede5;
+
+  --trtl-tag-bg: #eeede5;
+  --trtl-tag-ink: #5e6055;
+  --trtl-code-ink: #7c7a55;
+  --trtl-code-bg: #f1f0e6;
+
+  --trtl-amber: #96702a;
+  --trtl-amber-bg: #fbf3e2;
+  --trtl-amber-line: #eddfc0;
+
+  /* Muted brick rather than a pure red. Against TRTL's cream and greens a
+     bright red reads as an error; brick reads as "this happened". */
+  --trtl-red: #a8402b;
+  --trtl-red-bg: #faede9;
+  --trtl-red-line: #efd7cf;
+
+  --trtl-radius: 8px;
+  --trtl-radius-sm: 6px;
+}
+
 * {
   box-sizing: border-box;
 }
@@ -7,80 +55,177 @@ body {
   padding: 0 !important;
 }
 
+/* container-type lets the panel respond to the sidebar width the BM has
+   dragged to, rather than to the browser window. Media queries would be wrong
+   here — inside an iframe the viewport is not what is changing size. */
 .app {
+  color: var(--trtl-ink);
+  container-type: inline-size;
+  padding: 0 10px 10px;
   position: relative;
   width: 100%;
-  padding: 0 12px 12px;
 }
 
 .profilePanel + .profilePanel {
-  border-top: 2px solid #d8dee6;
-  margin-top: 12px;
-  padding-top: 12px;
+  border-top: 2px solid var(--trtl-line);
+  margin-top: 10px;
+  padding-top: 10px;
 }
+
+/* ---------------------------------------------------------------- buttons */
 
 .iconButton,
 .rowLink {
   align-items: center;
-  border: 1px solid #b8c5d1;
-  border-radius: 6px;
-  color: #1f2933;
+  background: var(--trtl-surface);
+  border: 1px solid var(--trtl-line);
+  border-radius: var(--trtl-radius-sm);
+  color: var(--trtl-muted);
   display: inline-flex;
   flex: 0 0 auto;
   font-size: 14px;
   height: 24px;
   justify-content: center;
   text-decoration: none;
+  transition: border-color 0.12s, color 0.12s, background 0.12s;
   width: 24px;
 }
 
-.alert {
-  background: #fff1f0;
-  border: 1px solid #ffccc7;
-  border-radius: 6px;
-  color: #a8071a;
+.iconButton:hover,
+.rowLink:hover {
+  background: var(--trtl-green-soft);
+  border-color: var(--trtl-green);
+  color: var(--trtl-green);
+}
+
+/* Was .stackerInlineButton. Renamed with the CRM swap.
+   min-height:100% removed here: the parent grid row is sized by its children,
+   so a child asking for 100% of that height is a circular constraint. With
+   useSetAppHeight() reporting height to Help Scout, that can oscillate and
+   read as flashing. align-self:stretch already fills the row. */
+.crmInlineButton {
+  align-self: stretch;
+  height: auto;
+  width: 24px;
+}
+
+.copyIconButton {
+  background: transparent;
+  border: 1px solid var(--trtl-line);
+  border-radius: var(--trtl-radius-sm);
+  color: var(--trtl-ink-2);
+  cursor: pointer;
+  flex: 0 0 auto;
+  font-size: 11px;
+  line-height: 1;
+  opacity: 0;
+  padding: 4px 6px;
+  transition: opacity 0.12s;
+}
+
+.phoneRow:hover .copyIconButton,
+.copyIconButton:focus {
+  opacity: 1;
+}
+
+.primaryButton {
+  align-items: center;
+  background: var(--trtl-green);
+  border: 1px solid var(--trtl-green);
+  border-radius: var(--trtl-radius);
+  color: #ffffff;
+  cursor: pointer;
+  display: flex;
   font-size: 13px;
   font-weight: 700;
-  margin-bottom: 8px;
-  padding: 7px 8px;
+  justify-content: center;
+  margin-top: 10px;
+  min-height: 32px;
+  text-decoration: none;
+  transition: background 0.12s, border-color 0.12s;
+  width: 100%;
 }
+
+.primaryButton:hover {
+  background: var(--trtl-green-hi);
+  border-color: var(--trtl-green-hi);
+}
+
+/* ------------------------------------------------------------ flag blocks */
+
+/* "Not a Fit" — the loudest thing the panel can say. */
+.alert {
+  background: var(--trtl-red-bg);
+  border: 1px solid var(--trtl-red-line);
+  border-radius: var(--trtl-radius);
+  color: var(--trtl-red);
+  font-size: 13px;
+  font-weight: 700;
+  margin-bottom: 6px;
+  padding: 7px 9px;
+}
+
+.copyBlock {
+  background: var(--trtl-surface-2);
+  border: 1px solid var(--trtl-line);
+  border-radius: var(--trtl-radius);
+  min-width: 0;
+  padding: 7px 9px;
+}
+
+/* Amber means "read this before you speak to them" — client flag, dietary,
+   medical. Green elsewhere means "context that helps you". Keeping those two
+   meanings distinct is what stops people skimming past both. */
+.warningBlock {
+  background: var(--trtl-amber-bg);
+  border-color: var(--trtl-amber-line);
+  margin-bottom: 6px;
+}
+
+.warningBlock .label {
+  color: var(--trtl-amber);
+}
+
+/* ------------------------------------------------------------ info blocks */
 
 .summaryStack {
   display: grid;
-  gap: 6px;
-  margin-bottom: 8px;
+  gap: 5px;
+  margin-bottom: 6px;
 }
 
 .infoGrid {
   align-items: stretch;
   display: grid;
-  gap: 6px;
+  gap: 5px;
   grid-template-columns: minmax(0, 1fr) minmax(64px, 0.34fr) 24px;
 }
 
 .infoRow {
   align-items: flex-start;
-  background: #f7f9fb;
-  border: 1px solid #d8dee6;
-  border-radius: 6px;
+  background: var(--trtl-surface-2);
+  border: 1px solid var(--trtl-line);
+  border-radius: var(--trtl-radius);
   display: flex;
-  min-width: 0;
-  padding: 7px;
   flex-direction: column;
+  min-width: 0;
+  padding: 6px 7px;
 }
+
 .infoRow.phoneRow {
-    display: flex;
-    flex-direction: row;
-    justify-content: space-between;
+  display: flex;
+  flex-direction: row;
+  justify-content: space-between;
+  padding-right: 7px;
 }
 
 .infoRow > div {
   display: grid;
-  gap: 2px;
+  gap: 1px;
 }
 
 .infoRow span {
-  color: #1f2933;
+  color: var(--trtl-ink);
   display: block;
   font-size: 14px;
   font-weight: 400;
@@ -89,76 +234,266 @@ body {
 }
 
 .infoRow > div > span {
-  margin-top: 2px;
+  margin-top: 1px;
 }
 
-.phoneRow {
-  padding-right: 7px;
+/* --------------------------------------------------- SF "good to know" card */
+
+.sfCard {
+  background: linear-gradient(180deg, #f2f8f4, var(--trtl-surface));
+  border: 1px solid var(--trtl-green-line);
+  border-radius: var(--trtl-radius);
+  margin-bottom: 6px;
+  padding: 8px 9px 9px;
 }
 
-.stackerInlineButton {
-  align-self: stretch;
-  height: auto;
-  min-height: 100%;
-  width: 24px;
+.sfHead {
+  align-items: center;
+  display: flex;
+  gap: 8px;
+  justify-content: space-between;
+  margin-bottom: 5px;
 }
 
-.copyIconButton {
-  background: transparent;
-  border: 1px solid #b8c5d1;
-  border-radius: 6px;
-  color: #1f2933;
-  cursor: pointer;
-  flex: 0 0 auto;
+.sfEyebrow {
+  color: var(--trtl-green);
+  margin-bottom: 0;
+}
+
+.sfName {
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  line-height: 1.2;
+}
+
+.sfSub {
+  color: var(--trtl-muted);
+  font-size: 11.5px;
+  line-height: 1.3;
+}
+
+.chip {
+  background: var(--trtl-tag-bg);
+  border-radius: 999px;
+  color: var(--trtl-tag-ink);
   font-size: 11px;
-  line-height: 1;
-  opacity: 0;
-  padding: 5px 6px;
+  font-weight: 600;
+  padding: 2px 8px;
+  white-space: nowrap;
 }
 
-.phoneRow:hover .copyIconButton,
-.copyIconButton:focus {
-  opacity: 1;
+.chipGreen {
+  background: var(--trtl-green-soft);
+  color: var(--trtl-green);
 }
 
-.copyBlock {
-  background: #f7f9fb;
-  border: 1px solid #d8dee6;
-  border-radius: 6px;
-  min-width: 0;
-  padding: 7px;
+/* Derived from the trip list, so these can never disagree with it. */
+.statGrid {
+  background: var(--trtl-line-soft);
+  border: 1px solid var(--trtl-line-soft);
+  border-radius: var(--trtl-radius-sm);
+  display: grid;
+  gap: 1px;
+  grid-template-columns: repeat(auto-fit, minmax(64px, 1fr));
+  margin-top: 7px;
+  overflow: hidden;
 }
 
-.warningBlock {
-  background: #fffbe6;
-  border-color: #e0b400;
-  margin-bottom: 8px;
+.stat {
+  background: var(--trtl-surface);
+  padding: 5px 7px;
 }
+
+.statValue {
+  color: var(--trtl-green);
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  line-height: 1.2;
+}
+
+.statLabel {
+  color: var(--trtl-muted);
+  font-size: 9.5px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.touchGrid {
+  display: grid;
+  gap: 5px;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  margin-top: 7px;
+}
+
+.touch {
+  display: grid;
+  gap: 1px;
+}
+
+.touchLabel {
+  color: var(--trtl-muted);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.touchValue {
+  font-size: 12.5px;
+  font-weight: 600;
+  line-height: 1.25;
+}
+
+.touchNote {
+  color: var(--trtl-muted);
+  font-size: 11.5px;
+  line-height: 1.3;
+}
+
+.sfNote {
+  border-top: 1px solid var(--trtl-green-line);
+  margin-top: 7px;
+  padding-top: 6px;
+}
+
+.sfGenerated .plainText {
+  color: var(--trtl-muted);
+}
+
+.sfStamp {
+  color: var(--trtl-muted-2);
+  font-size: 10.5px;
+  margin-top: 3px;
+}
+
+.flagEntry + .flagEntry {
+  border-top: 1px solid var(--trtl-amber-line);
+  margin-top: 5px;
+  padding-top: 5px;
+}
+
+/* ------------------------------------------------------------- local time */
+
+/* The clock needs more room than the old Age cell it replaces. Below roughly
+   340px the sidebar is too narrow for three columns, so phone and time stack
+   and the CRM arrow drops to its own row. */
+.contactGrid {
+  grid-template-columns: minmax(0, 1fr) minmax(118px, 0.8fr) 24px;
+}
+
+@container (max-width: 340px) {
+  .contactGrid {
+    grid-template-columns: minmax(0, 1fr) 24px;
+  }
+}
+
+.localTime {
+  align-items: center;
+  display: flex;
+  flex-direction: row;
+  flex-wrap: wrap;
+  gap: 5px;
+  justify-content: space-between;
+}
+
+.localTimeBand {
+  color: var(--trtl-muted);
+  flex-basis: 100%;
+  font-size: 11px;
+}
+
+.callChip {
+  font-size: 10.5px;
+}
+
+/* Shown only when the zone was inferred from a country that spans several —
+   US, Canada, or an Australian record with no state. Guests whose state we
+   know get no caveat, because there is nothing to caveat. */
+.zoneCaveat {
+  color: var(--trtl-amber);
+  font-style: italic;
+}
+
+.call-ok {
+  background: var(--trtl-green-soft);
+  color: var(--trtl-green);
+}
+
+.call-edge {
+  background: var(--trtl-amber-bg);
+  color: var(--trtl-amber);
+}
+
+.call-no {
+  background: var(--trtl-red-bg);
+  color: var(--trtl-red);
+}
+
+/* Agent-booked trips change who you should be ringing, so this sits with the
+   phone number rather than further down the panel. */
+.agentNotice {
+  background: var(--trtl-amber-bg);
+  border: 1px solid var(--trtl-amber-line);
+  border-radius: var(--trtl-radius-sm);
+  color: var(--trtl-amber);
+  font-size: 11.5px;
+  font-weight: 600;
+  line-height: 1.3;
+  padding: 5px 7px;
+}
+
+/* --------------------------------------------------------------- sections */
 
 .section {
-  border-top: 1px solid #d8dee6;
+  border-top: 1px solid var(--trtl-line);
   display: grid;
-  gap: 6px;
-  margin-top: 10px;
-  padding-top: 8px;
+  gap: 5px;
+  margin-top: 8px;
+  padding-top: 7px;
 }
 
 .tripsSection {
   display: grid;
-  gap: 6px;
-  margin-top: 10px;
+  gap: 5px;
+  margin-top: 8px;
 }
 
 .section h2 {
-  color: #1f2933;
+  color: var(--trtl-ink);
   font-size: 14px;
   line-height: 1.2;
   margin: 0;
 }
 
+.label {
+  color: var(--trtl-muted);
+  display: block;
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.07em;
+  margin-bottom: 2px;
+  text-transform: uppercase;
+}
+
+.plainText {
+  color: var(--trtl-ink-2);
+  font-size: 13px;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.multiline {
+  white-space: pre-wrap;
+}
+
+/* ----------------------------------------------------------------- tables */
+
 .dataTable {
-  border: 1px solid #d8dee6;
-  border-radius: 6px;
+  border: 1px solid var(--trtl-line);
+  border-radius: var(--trtl-radius);
   overflow: hidden;
 }
 
@@ -180,25 +515,31 @@ body {
 }
 
 .tableHeader {
-  background: #f7f9fb;
-  border-bottom: 1px solid #d8dee6;
-  color: #1f2933;
-  font-size: 11px;
+  background: var(--trtl-surface-2);
+  border-bottom: 1px solid var(--trtl-line);
+  color: var(--trtl-muted);
+  font-size: 10.5px;
   font-weight: 700;
-  padding: 6px;
+  letter-spacing: 0.07em;
+  padding: 5px 7px;
+  text-transform: uppercase;
 }
 
 .tableRow {
-  border-bottom: 1px solid #d8dee6;
-  color: #1f2933;
+  border-bottom: 1px solid var(--trtl-line-soft);
+  color: var(--trtl-ink);
   font-size: 12px;
   line-height: 1.25;
-  padding: 7px 6px;
+  padding: 7px;
 }
 
 .leadsTable .tableRow:last-child,
 .bookingRowWrapper:last-child > :last-child {
   border-bottom: 0;
+}
+
+.leadsTable .tableRow:hover {
+  background: var(--trtl-surface-2);
 }
 
 .tableRow span {
@@ -211,10 +552,11 @@ body {
 }
 
 .coordinatorName {
+  color: var(--trtl-muted);
   display: block;
   font-size: 11px;
   font-weight: 400;
-  opacity: 0.7;
+  opacity: 1;
 }
 
 .rowActions {
@@ -226,10 +568,10 @@ body {
 
 .chevronButton {
   align-items: center;
-  background: transparent;
-  border: 1px solid #b8c5d1;
-  border-radius: 6px;
-  color: #1f2933;
+  background: var(--trtl-surface);
+  border: 1px solid var(--trtl-line);
+  border-radius: var(--trtl-radius-sm);
+  color: var(--trtl-muted);
   cursor: pointer;
   display: inline-flex;
   flex: 0 0 auto;
@@ -237,49 +579,21 @@ body {
   height: 24px;
   justify-content: center;
   padding: 0;
+  transition: border-color 0.12s, color 0.12s, background 0.12s;
   width: 24px;
 }
 
-.notesPanel {
-  background: #f7f9fb;
-  border-bottom: 1px solid #d8dee6;
-  border-top: 1px solid #d8dee6;
-  display: grid;
-  gap: 6px;
-  padding: 8px;
+.chevronButton:hover {
+  background: var(--trtl-green-soft);
+  border-color: var(--trtl-green);
+  color: var(--trtl-green);
 }
 
-.notesTextarea {
-  border: 1px solid #d8dee6;
-  border-radius: 4px;
-  box-sizing: border-box;
-  font-family: inherit;
-  font-size: 12px;
-  min-height: 64px;
-  padding: 6px;
-  resize: vertical;
-  width: 100%;
-}
-
-.saveNotesButton {
-  background: #1976a3;
-  border: none;
-  border-radius: 6px;
-  color: #fff;
-  cursor: pointer;
-  font-size: 12px;
-  font-weight: 700;
-  justify-self: end;
-  padding: 5px 14px;
-}
-
-.saveNotesButton:disabled {
-  opacity: 0.6;
-}
+/* ------------------------------------------------------------ trip groups */
 
 .tripGroups {
   display: grid;
-  gap: 7px;
+  gap: 6px;
 }
 
 .tripGroup {
@@ -288,75 +602,121 @@ body {
 }
 
 .groupTitle {
-  color: #1f2933;
-  font-size: 12px;
+  color: var(--trtl-muted);
+  font-size: 10.5px;
   font-weight: 700;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
 }
 
 .tripRow.active {
-  background: #e9f8ef;
+  background: var(--trtl-green-soft);
+  color: var(--trtl-green);
 }
 
+/* Ended within the last 30 days. Amber rather than orange so it sits in the
+   same family as the other "pay attention" states. */
 .tripRow.recent {
-  background: #fff3e0;
+  background: var(--trtl-amber-bg);
 }
 
+/* Was #fff2a8. TRTL has no yellow anywhere, and the yellow was the loudest
+   thing in the old panel. Green keeps the emphasis without shouting. */
 .tripRow.upcoming {
-  background: #fff2a8;
+  background: var(--trtl-green-soft);
+}
+
+.tripRow.upcoming .mainCell {
+  color: var(--trtl-green);
 }
 
 .tripRow.past {
-  background: #f4f5f6;
-}
-
-.tripRow.cancelled {
-  background: #f4f5f6;
-  color: #c41d1d;
+  background: var(--trtl-surface-2);
 }
 
 .tripRow.past .mainCell {
   font-weight: 400;
 }
 
-.label {
-  color: #1f2933;
-  display: block;
-  font-weight: 700;
-  margin-bottom: 2px;
+.tripRow.cancelled {
+  background: var(--trtl-red-bg);
+  color: var(--trtl-red);
 }
 
-.plainText {
-  color: #1f2933;
-  font-size: 13px;
-  line-height: 1.35;
-  overflow-wrap: anywhere;
+.tripRow.cancelled .coordinatorName {
+  color: var(--trtl-red);
+  opacity: 0.75;
 }
 
-.multiline {
-  white-space: pre-wrap;
+/* ------------------------------------------------------------ notes panel */
+
+.notesPanel {
+  align-items: end;
+  background: var(--trtl-surface-2);
+  border-bottom: 1px solid var(--trtl-line-soft);
+  border-top: 1px solid var(--trtl-line-soft);
+  display: grid;
+  gap: 6px;
+  /* Save now sits inline with the textarea rather than on its own row,
+     which removes roughly 30px from every expanded booking. */
+  grid-template-columns: minmax(0, 1fr) auto;
+  padding: 6px 7px;
 }
 
-.primaryButton {
-  align-items: center;
-  background: #1976a3;
-  border: 1px solid #1976a3;
-  border-radius: 6px;
-  color: #ffffff;
-  cursor: pointer;
-  display: flex;
-  font-size: 13px;
-  font-weight: 700;
-  justify-content: center;
-  margin-top: 12px;
-  min-height: 30px;
-  text-decoration: none;
+/* resize was `vertical`. Dragging the handle changed app height on every mouse
+   move, and every change was reported to Help Scout, which resized the iframe,
+   which re-measured. That loop is the most likely cause of the flashing people
+   report when opening notes. Fixed height with internal scrolling breaks it. */
+.notesTextarea {
+  background: var(--trtl-surface);
+  border: 1px solid var(--trtl-line);
+  border-radius: var(--trtl-radius-sm);
+  box-sizing: border-box;
+  color: var(--trtl-ink);
+  font-family: inherit;
+  font-size: 12px;
+  line-height: 1.4;
+  max-height: 200px;
+  min-height: 58px;
+  overflow-y: auto;
+  padding: 6px 7px;
+  resize: none;
   width: 100%;
 }
 
+.notesTextarea:focus {
+  border-color: var(--trtl-teal);
+  outline: 1px solid var(--trtl-teal);
+  outline-offset: -1px;
+}
+
+.saveNotesButton {
+  background: var(--trtl-green);
+  border: none;
+  border-radius: var(--trtl-radius-sm);
+  color: #fff;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 700;
+  padding: 6px 14px;
+  transition: background 0.12s;
+}
+
+.saveNotesButton:hover:not(:disabled) {
+  background: var(--trtl-green-hi);
+}
+
+.saveNotesButton:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+/* --------------------------------------------------------------- messages */
+
 .message {
   align-items: flex-start;
-  color: #1f2933;
+  color: var(--trtl-ink-2);
   display: grid;
   gap: 8px;
-  padding: 18px 0;
+  padding: 16px 0;
 }
