@@ -33,6 +33,9 @@ try {
 const FIELDS = {
   customer: {
     email: AIRTABLE_CUSTOMERS_EMAIL_FIELD,
+    // Primary field on Customers, used to turn linked records (travel friends)
+    // into readable names. TODO confirm the real name of this field.
+    name: 'Name',
     preferredName: 'Preferred Name',
     dob: 'DOB',
     age: 'Age',
@@ -46,9 +49,12 @@ const FIELDS = {
     timezone: 'Time-zone',
     clientFlag: 'Client Flag',
     notAFit: 'Not a Fit',
-    // Auto-rendered into the amber "must know" block whenever populated.
+    // These sit in the SF grid as ordinary detail. BMs copy anything that
+    // genuinely needs the amber treatment into Client Flag themselves, so the
+    // panel does not second-guess which allergy is severe.
     dietary: 'Dietary Restrictions',
     medical: 'Medical & Other',
+    departureAirport: 'Departure Airport',
     // SF card, in render order: pinned (human, capped at 5) -> about guest
     // (human, verbatim) -> summary (machine, overwritten weekly).
     aboutGuest: 'About Guest', // TODO confirm exact name
@@ -60,6 +66,9 @@ const FIELDS = {
     fitnessFromGuest: 'Fitness Details from Guest',
     hikingFitness: 'Hiking Fitness Level',
     frequentTravelFriends: 'Frequent Travel Friends',
+    // Multi-select. Short, shared vocabulary rendered as chips in the SF card.
+    traits: 'Guest Traits',
+    interests: 'Interests',
   },
   booking: {
     notes: 'Booking Notes',
@@ -77,6 +86,21 @@ const FIELDS = {
     feedbackCallHeldBy: 'Feedback Call Held By',
     feedbackSummary: 'Summary (Summary & Other Feedback)',
   },
+  lead: {
+    // Native long text on Booking CRM — editable, so the panel can write to it
+    // exactly as it does for booking notes.
+    notes: 'Booking Notes',
+  },
+};
+
+/**
+ * The only records this endpoint will write to, and the only field it will
+ * write on each. Whitelisted so a crafted request cannot point the write at an
+ * arbitrary table or field.
+ */
+const WRITE_TARGETS = {
+  booking: { table: () => TABLE_BOOKINGS, field: () => FIELDS.booking.notes },
+  lead: { table: () => TABLE_BOOKING_CRM || TABLE_LEADS, field: () => FIELDS.lead.notes },
 };
 
 /** Shown when a past booking row is expanded. Order is the render order. */
@@ -112,14 +136,26 @@ const OPEN_LEAD_STATUSES = [
 
 export default async function handler(req, res) {
   if (req.method === 'POST') {
-    const { bookingId, notes } = req.body || {};
-    if (!bookingId) return sendJson(res, 400, { error: 'Missing bookingId' });
-    if (!AIRTABLE_API_KEY || !AIRTABLE_BASE_ID || !TABLE_BOOKINGS) {
+    const { bookingId, recordId, recordType, notes } = req.body || {};
+
+    // `bookingId` is the original shape and still accepted, so an older
+    // frontend deployed against a newer API keeps working.
+    const type = recordType || (bookingId ? 'booking' : null);
+    const id = recordId || bookingId;
+
+    const target = WRITE_TARGETS[type];
+    if (!id || !target) {
+      return sendJson(res, 400, { error: 'Missing or unknown record to update' });
+    }
+
+    const tableName = target.table();
+    if (!AIRTABLE_API_KEY || !AIRTABLE_BASE_ID || !tableName) {
       return sendJson(res, 500, { error: 'Airtable environment variables are not configured' });
     }
+
     try {
       const base = new Airtable({ apiKey: AIRTABLE_API_KEY }).base(AIRTABLE_BASE_ID);
-      await base(TABLE_BOOKINGS).update(bookingId, { [FIELDS.booking.notes]: notes || '' });
+      await base(tableName).update(id, { [target.field()]: notes || '' });
       return sendJson(res, 200, { ok: true });
     } catch (error) {
       return sendJson(res, 500, { error: 'Failed to save notes', details: getErrorMessage(error) });
@@ -195,9 +231,14 @@ async function shapeProfile(base, customer, email, mailboxId) {
     ...bookings.flatMap((booking) => asArray(booking.fields.Trip)),
     ...leads.flatMap((lead) => asArray(lead.fields.Trips)),
   ]);
-  const [trips, bookingManagers] = await Promise.all([
+  // Frequent Travel Friends is a link field, so it arrives as record IDs.
+  // Resolve them to names — showing "rec8fUMOfXbpRHBcg" to a BM is useless.
+  const travelFriendIds = asArray(fields[FIELDS.customer.frequentTravelFriends]).filter(isRecordId);
+
+  const [trips, bookingManagers, travelFriends] = await Promise.all([
     fetchRecordsByIds(base, TABLE_TRIPS, tripIds),
     fetchAllRecords(base, TABLE_BOOKING_MANAGERS),
+    fetchRecordsByIds(base, TABLE_CUSTOMERS, travelFriendIds),
   ]);
   const tripMap = new Map(trips.map((trip) => [trip.id, trip]));
 
@@ -231,12 +272,11 @@ async function shapeProfile(base, customer, email, mailboxId) {
     },
 
     // --- amber "must know" block ------------------------------------------
-    // These are already curated in the CRM, so they render automatically
-    // rather than needing a human to pin them.
+    // Client Flag only. BMs decide what warrants the amber treatment and copy
+    // it in themselves, which keeps the alert meaningful — if every dietary
+    // note triggered it, people would stop reading it.
     flags: {
       clientFlag: firstValue(fields[C.clientFlag]),
-      dietary: firstValue(fields[C.dietary]),
-      medical: firstValue(fields[C.medical]),
       notAFit: Boolean(fields[C.notAFit]),
     },
 
@@ -249,7 +289,16 @@ async function shapeProfile(base, customer, email, mailboxId) {
       state: firstValue(fields[C.state]),
       country: firstValue(fields[C.country]),
       timezone: firstValue(fields[C.timezone]),
-      frequentTravelFriends: firstValue(fields[C.frequentTravelFriends]),
+      frequentTravelFriends: resolveTravelFriends(fields[C.frequentTravelFriends], travelFriends),
+      // Multi-select arrives as an array; keep it as one so the UI can chip it.
+      traits: asArray(fields[C.traits]).map(firstValue).filter(Boolean),
+      interests: formatValue(fields[C.interests]),
+      dietary: firstValue(fields[C.dietary]),
+      medical: firstValue(fields[C.medical]),
+      departureAirport: firstValue(fields[C.departureAirport]),
+      // "Usually books: Private supplement (5 of 6 trips)" — derived, because
+      // Booking Type lives per-booking and a single value would be a guess.
+      usuallyBooks: buildBookingTypeSummary(shapedBookings),
       // Per-booking in Airtable, but a BM about to dial needs to know before
       // they dial — so it is surfaced here if any live trip is agent-booked.
       viaAgent: [...(shapedBookings.upcoming || []), ...(shapedBookings.active || [])]
@@ -287,6 +336,54 @@ function buildStats(bookings) {
     avgRating: average === null ? null : Math.round(average * 10) / 10,
     ratedCount: rated.length,
   };
+}
+
+/**
+ * Most frequent Booking Type across a guest's real trips.
+ *
+ * Cancelled bookings are excluded — a room type they never actually travelled
+ * in says nothing about what they prefer. Returns null rather than a fabricated
+ * default when no booking carries a type.
+ */
+/**
+ * Turns a Frequent Travel Friends value into readable names.
+ *
+ * If the field holds links, the fetched records supply the names. If it holds
+ * plain text, that text is used as-is. Record IDs are never shown — if a name
+ * cannot be resolved the entry is dropped, because "rec8fUMOfXbpRHBcg" tells a
+ * BM less than nothing.
+ */
+function resolveTravelFriends(rawValue, friendRecords) {
+  const C = FIELDS.customer;
+  const values = asArray(rawValue);
+  if (!values.length) return '';
+
+  const looksLinked = values.some((value) => isRecordId(value));
+  if (!looksLinked) return formatValue(rawValue);
+
+  const names = friendRecords
+    .map((record) => firstValue(record.fields[C.name]) || firstValue(record.fields[C.preferredName]))
+    .filter(Boolean);
+
+  return names.join(', ');
+}
+
+function buildBookingTypeSummary(bookings) {
+  const relevant = [
+    ...(bookings.past || []),
+    ...(bookings.active || []),
+    ...(bookings.upcoming || []),
+  ].filter((booking) => booking.bookingType);
+
+  if (!relevant.length) return null;
+
+  const counts = new Map();
+  for (const booking of relevant) {
+    counts.set(booking.bookingType, (counts.get(booking.bookingType) || 0) + 1);
+  }
+
+  const [type, count] = [...counts.entries()].sort((a, b) => b[1] - a[1])[0];
+  return { type, count, total: relevant.length };
 }
 
 function buildBookingManagers(bookings) {
@@ -349,6 +446,7 @@ function shapeLeads(records, tripMap) {
         trip: firstValue(trip?.fields['Trip Title & Code']) || firstValue(fields['D-Future-Trip-Requests']) || formatValue(fields['D-Future-Trip-Tags']) || 'Trip not set',
         dateAdded: formatShortDate(dateRaw),
         dateAddedTimestamp: parseDate(dateRaw)?.getTime() || 0,
+        notes: firstValue(fields[FIELDS.lead.notes]) || '',
         crmUrl: `${CRM_BASE_URL}/crm/booking-crm/view/bcr_${record.id}`,
         futureTripRequests: firstValue(fields['D-Future-Trip-Requests']) || formatValue(fields['D-Future-Trip-Tags']),
       };

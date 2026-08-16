@@ -188,15 +188,39 @@ function SFCard({ customer, showEmail }) {
         <Stat value={stats.tripsDone} label="Trips done" />
         <Stat value={stats.upcoming} label="Upcoming" />
         <Stat value={stats.avgRating} label="Avg rating" />
-        <Stat value={p.age} label="Age" />
+        {/* DOB rides along with Age rather than taking a row of its own —
+            they are the same fact, and the duplicate left a dead column. */}
+        <Stat value={p.age} label="Age" note={p.dob} />
       </div>
 
       <div className="touchGrid">
+        <Touch
+          label="Room"
+          value={p.usuallyBooks?.type}
+          note={p.usuallyBooks && `${p.usuallyBooks.count} of ${p.usuallyBooks.total} trips`}
+        />
+        <Touch label="Dietary" value={p.dietary} />
+        <Touch label="Medical & other" value={p.medical} />
+        <Touch label="Interests" value={p.interests} />
+        {/* Travel friends hidden pending a decision on how to display linked
+            guests. The API still resolves the names — only the row is off. */}
+        <Touch label="Departs" value={p.departureAirport} />
+      </div>
+
+      {/* Fitness gets the full width: the notes run to several lines, and
+          pairing them with a short field left half the row empty. */}
+      <div className="touchGrid touchGridWide">
         <Touch label="Fitness" value={p.fitnessLevel} note={p.fitnessNotes || p.fitnessFromGuest} />
         <Touch label="Hiking fitness" value={p.hikingFitness} />
-        <Touch label="Travel friends" value={p.frequentTravelFriends} />
-        <Touch label="Born" value={p.dob} />
       </div>
+
+      {p.traits?.length > 0 && (
+        <div className="traitRow">
+          {p.traits.map((trait) => (
+            <span className="chip traitChip" key={trait}>{trait}</span>
+          ))}
+        </div>
+      )}
 
       {sf.aboutGuest && (
         <div className="sfNote">
@@ -215,12 +239,13 @@ function SFCard({ customer, showEmail }) {
   );
 }
 
-function Stat({ value, label }) {
+function Stat({ value, label, note }) {
   if (!hasValue(value)) return null;
   return (
     <div className="stat">
       <div className="statValue">{formatValue(value)}</div>
       <div className="statLabel">{label}</div>
+      {hasValue(note) && <div className="statNote">{formatValue(note)}</div>}
     </div>
   );
 }
@@ -241,22 +266,12 @@ function Touch({ label, value, note }) {
  * already curated by a human in the CRM, so they render automatically.
  */
 function FlagBlock({ flags }) {
-  const entries = [
-    ['Client flag', flags.clientFlag],
-    ['Dietary', flags.dietary],
-    ['Medical & other', flags.medical],
-  ].filter(([, value]) => hasValue(value));
-
-  if (!entries.length) return null;
+  if (!hasValue(flags.clientFlag)) return null;
 
   return (
     <section className="copyBlock warningBlock">
-      {entries.map(([label, value]) => (
-        <div className="flagEntry" key={label}>
-          <span className="label">{label}</span>
-          <div className="plainText multiline">{formatValue(value)}</div>
-        </div>
-      ))}
+      <span className="label">Client flag</span>
+      <div className="plainText multiline">{formatValue(flags.clientFlag)}</div>
     </section>
   );
 }
@@ -298,15 +313,38 @@ function LeadsTable({ leads }) {
           <span />
         </div>
         {leads.map((lead) => (
-          <div className="tableRow" key={lead.id}>
-            <span className="mainCell">{lead.trip}</span>
-            <span>{lead.status}</span>
-            <span>{lead.dateAdded}</span>
-            <ExternalLink href={crmUrl(lead)} label="Open lead in CRM" />
-          </div>
+          <LeadRow key={lead.id} lead={lead} />
         ))}
       </div>
     </section>
+  );
+}
+
+function LeadRow({ lead }) {
+  const [expanded, setExpanded] = useState(false);
+
+  return (
+    <div className="bookingRowWrapper">
+      <div className="tableRow">
+        <span className="mainCell">{lead.trip}</span>
+        <span>{lead.status}</span>
+        <span>{lead.dateAdded}</span>
+        <div className="rowActions">
+          <button className="chevronButton" onClick={() => setExpanded(!expanded)} title="Booking notes">
+            {expanded ? '▲' : '▼'}
+          </button>
+          <ExternalLink href={crmUrl(lead)} label="Open lead in CRM" />
+        </div>
+      </div>
+      {expanded && (
+        <NotesEditor
+          recordId={lead.id}
+          recordType="lead"
+          initialNotes={lead.notes}
+          placeholder="Booking Notes"
+        />
+      )}
+    </div>
   );
 }
 
@@ -345,9 +383,13 @@ function TripGroup({ rows, title }) {
   );
 }
 
-function BookingRow({ booking }) {
-  const [expanded, setExpanded] = useState(false);
-  const [notes, setNotes] = useState(booking.notes || '');
+/**
+ * Editable notes, shared by bookings and leads. Both write to a native long
+ * text field; only the record type differs, and the API whitelists which
+ * table and field each type maps to.
+ */
+function NotesEditor({ recordId, recordType, initialNotes, placeholder }) {
+  const [notes, setNotes] = useState(initialNotes || '');
   const [saveStatus, setSaveStatus] = useState(null);
 
   async function handleSave() {
@@ -356,7 +398,7 @@ function BookingRow({ booking }) {
       const res = await fetch('/api/airtable', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ bookingId: booking.id, notes }),
+        body: JSON.stringify({ recordId, recordType, notes }),
       });
       const body = await res.json();
       if (!res.ok) throw new Error(body.details || body.error || 'Failed');
@@ -368,7 +410,28 @@ function BookingRow({ booking }) {
     }
   }
 
-  const saveLabel = saveStatus === 'saving' ? 'Saving...' : saveStatus === 'saved' ? 'Saved' : saveStatus === 'error' ? 'Error' : 'Save';
+  const saveLabel = saveStatus === 'saving' ? 'Saving...'
+    : saveStatus === 'saved' ? 'Saved'
+    : saveStatus === 'error' ? 'Error'
+    : 'Save';
+
+  return (
+    <div className="notesPanel">
+      <textarea
+        className="notesTextarea"
+        placeholder={placeholder}
+        value={notes}
+        onChange={(event) => setNotes(event.target.value)}
+      />
+      <button className="saveNotesButton" disabled={saveStatus === 'saving'} onClick={handleSave}>
+        {saveLabel}
+      </button>
+    </div>
+  );
+}
+
+function BookingRow({ booking }) {
+  const [expanded, setExpanded] = useState(false);
 
   return (
     <div className="bookingRowWrapper">
@@ -386,17 +449,12 @@ function BookingRow({ booking }) {
         </div>
       </div>
       {expanded && (
-        <div className="notesPanel">
-          <textarea
-            className="notesTextarea"
-            placeholder="Booking Notes"
-            value={notes}
-            onChange={(e) => setNotes(e.target.value)}
-          />
-          <button className="saveNotesButton" disabled={saveStatus === 'saving'} onClick={handleSave}>
-            {saveLabel}
-          </button>
-        </div>
+        <NotesEditor
+          recordId={booking.id}
+          recordType="booking"
+          initialNotes={booking.notes}
+          placeholder="Booking Notes"
+        />
       )}
     </div>
   );
