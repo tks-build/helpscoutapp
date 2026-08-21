@@ -186,11 +186,18 @@ export default async function handler(req, res) {
     }
 
     const profiles = await Promise.all(customers.map(({ customer, email }) => shapeProfile(base, customer, email, mailboxId)));
+
+    // One email can match several customers — a couple sharing an inbox, or a
+    // referral using a friend's address before giving us their own. Order by
+    // how much history each record carries so the substantive one leads,
+    // rather than whichever Airtable happened to return first.
+    profiles.sort((a, b) => scoreProfileRelevance(b) - scoreProfileRelevance(a));
     const firstProfile = profiles[0];
 
     return sendJson(res, 200, {
       email: emails[0],
       emails,
+      matchCount: profiles.length,
       records: profiles.map((profile) => ({ id: profile.customer.id, fields: profile.customer.fields })),
       profiles,
       customer: firstProfile.customer,
@@ -204,6 +211,23 @@ export default async function handler(req, res) {
       details: getErrorMessage(error),
     });
   }
+}
+
+/**
+ * Rough measure of how much a customer record matters to a BM right now.
+ *
+ * A live or upcoming trip dominates everything else — that is the person the
+ * conversation is almost certainly about. Past trips come next, then open
+ * leads. An empty record sorts last, which is what we want: a half-created
+ * referral should never sit above a guest with five trips behind them.
+ */
+function scoreProfileRelevance(profile) {
+  const bookings = profile.bookings || {};
+  const live = (bookings.upcoming || []).length + (bookings.active || []).length;
+  const past = (bookings.past || []).length;
+  const leads = (profile.leads || []).length;
+
+  return live * 1000 + past * 10 + leads;
 }
 
 async function fetchCustomersByEmail(base, email) {

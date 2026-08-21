@@ -114,11 +114,16 @@ function HomePage({ customerData }) {
 
   return (
     <>
+      {profiles.length > 1 && (
+        <div className="multiMatch">
+          {profiles.length} customer records share this email address — shown below, most active first.
+        </div>
+      )}
       {profiles.map((profile, index) => (
         <ProfilePanel
           key={profile.customer?.id || index}
           profile={profile}
-          showEmail={index > 0}
+          showEmail={profiles.length > 1}
         />
       ))}
     </>
