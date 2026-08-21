@@ -342,12 +342,22 @@ function LeadRow({ lead }) {
         </div>
       </div>
       {expanded && (
-        <NotesEditor
-          recordId={lead.id}
-          recordType="lead"
-          initialNotes={lead.notes}
-          placeholder="Booking Notes"
-        />
+        <>
+          {/* Free-text interest note. Read-only here — it is maintained in the
+              CRM, and it used to be shown as though it were a trip name. */}
+          {hasValue(lead.requests) && (
+            <div className="leadRequests">
+              <span className="label">Guest interest</span>
+              <div className="plainText multiline">{formatValue(lead.requests)}</div>
+            </div>
+          )}
+          <NotesEditor
+            recordId={lead.id}
+            recordType="lead"
+            initialNotes={lead.notes}
+            placeholder="Booking Notes"
+          />
+        </>
       )}
     </div>
   );

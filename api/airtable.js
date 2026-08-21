@@ -90,6 +90,10 @@ const FIELDS = {
     // Native long text on Booking CRM — editable, so the panel can write to it
     // exactly as it does for booking notes.
     notes: 'Booking Notes',
+    // Tags are a short controlled list and belong in the Lead Trip column.
+    // Requests is free prose a BM has typed and belongs in the expanded row.
+    tags: 'D-Future-Trip-Tags',
+    requests: 'D-Future-Trip-Requests',
   },
 };
 
@@ -460,19 +464,28 @@ async function fetchRecordsByIds(base, tableName, ids) {
 function shapeLeads(records, tripMap) {
   return records
     .map((record) => {
+      const L = FIELDS.lead;
       const fields = record.fields;
       const status = String(fields.Status || '');
       const trip = tripMap.get(asArray(fields.Trips)[0]);
       const dateRaw = firstValue(fields['Date Created'] || fields['Date Added']);
+
+      const tripTitle = firstValue(trip?.fields['Trip Title & Code']);
+      const tags = formatValue(fields[L.tags]);
+      const requests = firstValue(fields[L.requests]);
+
       return {
         id: record.id,
         status,
-        trip: firstValue(trip?.fields['Trip Title & Code']) || firstValue(fields['D-Future-Trip-Requests']) || formatValue(fields['D-Future-Trip-Tags']) || 'Trip not set',
+        // Column shows a trip name or short tags only. Free prose used to land
+        // here when neither existed, which read as a very odd trip title.
+        trip: tripTitle || tags || 'Trip not set',
+        tags,
+        requests,
         dateAdded: formatShortDate(dateRaw),
         dateAddedTimestamp: parseDate(dateRaw)?.getTime() || 0,
-        notes: firstValue(fields[FIELDS.lead.notes]) || '',
+        notes: firstValue(fields[L.notes]) || '',
         crmUrl: `${CRM_BASE_URL}/crm/booking-crm/view/bcr_${record.id}`,
-        futureTripRequests: firstValue(fields['D-Future-Trip-Requests']) || formatValue(fields['D-Future-Trip-Tags']),
       };
     })
     .filter((lead) => OPEN_LEAD_STATUSES.includes(lead.status))

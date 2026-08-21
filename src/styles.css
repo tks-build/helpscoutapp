@@ -695,6 +695,12 @@ body {
   opacity: 0.75;
 }
 
+.leadRequests {
+  background: var(--trtl-surface-2);
+  border-top: 1px solid var(--trtl-line-soft);
+  padding: 6px 7px 0;
+}
+
 /* ------------------------------------------------------------ notes panel */
 
 .notesPanel {
