@@ -101,13 +101,13 @@ function App() {
       ) : !record ? (
         <Message title="No Airtable match" text="No customer record was found for this email address." />
       ) : (
-        <HomePage customerData={customerData} />
+        <HomePage customerData={customerData} context={context} />
       )}
     </main>
   );
 }
 
-function HomePage({ customerData }) {
+function HomePage({ customerData, context }) {
   const profiles = customerData?.profiles?.length
     ? customerData.profiles
     : [{ customer: customerData.customer, leads: customerData.leads, bookings: customerData.bookings }];
@@ -124,13 +124,14 @@ function HomePage({ customerData }) {
           key={profile.customer?.id || index}
           profile={profile}
           showEmail={profiles.length > 1}
+          context={context}
         />
       ))}
     </>
   );
 }
 
-function ProfilePanel({ profile, showEmail }) {
+function ProfilePanel({ profile, showEmail, context }) {
   const customer = profile.customer;
   const fields = customer?.fields || {};
   // The API now shapes these. Fall back to raw fields so the panel still
@@ -149,6 +150,12 @@ function ProfilePanel({ profile, showEmail }) {
 
       <TripsSection bookings={bookings} />
       <LeadsTable leads={leads} />
+
+      <ActivityLog
+        customerId={customer?.id}
+        entries={profile.activity}
+        context={context}
+      />
 
       <a className="primaryButton" href={customer?.calendlyUrl} rel="noreferrer" target="_blank">
         Calendly link
@@ -323,6 +330,158 @@ function LeadsTable({ leads }) {
       </div>
     </section>
   );
+}
+
+/**
+ * Activity Log — a composer over a newest-first feed.
+ *
+ * Author and timestamp are recorded as fields rather than typed into the body,
+ * so entries stay consistent instead of drifting between "19AUG26 FP:" and
+ * "20 AUG CJ" depending on who wrote them.
+ */
+function ActivityLog({ customerId, entries, context }) {
+  const [feed, setFeed] = useState(entries || []);
+  const [body, setBody] = useState('');
+  const [status, setStatus] = useState(null);
+
+  useEffect(() => setFeed(entries || []), [entries]);
+
+  const user = context?.user;
+  const authorName = [user?.firstName, user?.lastName].filter(Boolean).join(' ');
+  const conversationId = context?.conversation?.id;
+
+  if (!customerId) return null;
+
+  async function handlePost() {
+    const text = body.trim();
+    if (!text) return;
+
+    setStatus('saving');
+    try {
+      const res = await fetch('/api/airtable', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          recordType: 'activity',
+          customerId,
+          body: text,
+          type: 'Note',
+          author: authorName,
+        }),
+      });
+      const payload = await res.json();
+      if (!res.ok) throw new Error(payload.details || payload.error || 'Failed');
+
+      // Shown immediately rather than waiting for a refetch — the entry is
+      // already saved, and a BM mid-call should see it land.
+      setFeed([
+        {
+          id: payload.id || `local-${Date.now()}`,
+          body: text,
+          author: authorName,
+          type: 'Note',
+          createdIso: new Date().toISOString(),
+        },
+        ...feed,
+      ]);
+      setBody('');
+      setStatus(null);
+    } catch (err) {
+      setStatus('error');
+      console.error('Activity save failed:', err.message);
+    }
+  }
+
+  async function handleCopyReply() {
+    if (!conversationId) return;
+    setStatus('fetching');
+    try {
+      const res = await fetch(`/api/helpscout?conversationId=${conversationId}`);
+      const payload = await res.json();
+      if (!res.ok) throw new Error(payload.details || payload.error || 'Failed');
+      if (!payload.reply) {
+        setStatus('no-reply');
+        return;
+      }
+      // Dropped into the composer rather than posted straight away, so it can
+      // be trimmed before it becomes a permanent record.
+      setBody(payload.reply.text);
+      setStatus(null);
+    } catch (err) {
+      setStatus('error');
+      console.error('Could not read last reply:', err.message);
+    }
+  }
+
+  const statusMessage = status === 'error' ? 'Something went wrong — try again'
+    : status === 'no-reply' ? 'No sent reply found on this conversation'
+    : null;
+
+  return (
+    <section className="activitySection">
+      <div className="groupTitle">Activity log</div>
+
+      <div className="activityComposer">
+        <textarea
+          className="notesTextarea"
+          placeholder="Add a note…"
+          value={body}
+          onChange={(event) => setBody(event.target.value)}
+        />
+        <div className="activityActions">
+          {conversationId && (
+            <button className="chevronButton activityCopyButton" onClick={handleCopyReply} type="button">
+              {status === 'fetching' ? 'Loading…' : 'Copy last reply'}
+            </button>
+          )}
+          <button
+            className="saveNotesButton"
+            disabled={status === 'saving' || !body.trim()}
+            onClick={handlePost}
+            type="button"
+          >
+            {status === 'saving' ? 'Posting…' : 'Post'}
+          </button>
+        </div>
+        {statusMessage && <div className="activityStatus">{statusMessage}</div>}
+      </div>
+
+      {feed.map((entry) => (
+        <div className="activityEntry" key={entry.id}>
+          <div className="activityMeta">
+            <span className="activityAuthor">{entry.author || 'Unknown'}</span>
+            <span className="activityTime">{relativeTime(entry.createdIso)}</span>
+          </div>
+          <div className="plainText multiline">{entry.body}</div>
+        </div>
+      ))}
+    </section>
+  );
+}
+
+/** Matches how the Stacker feed reads — "2 days ago" rather than a date. */
+function relativeTime(iso) {
+  if (!iso) return '';
+  const then = new Date(iso).getTime();
+  if (!then) return '';
+
+  const seconds = Math.round((Date.now() - then) / 1000);
+  if (seconds < 60) return 'just now';
+
+  const minutes = Math.round(seconds / 60);
+  if (minutes < 60) return `${minutes} min ago`;
+
+  const hours = Math.round(minutes / 60);
+  if (hours < 24) return `${hours} hr ago`;
+
+  const days = Math.round(hours / 24);
+  if (days < 31) return days === 1 ? 'yesterday' : `${days} days ago`;
+
+  const months = Math.round(days / 30);
+  if (months < 12) return months === 1 ? 'a month ago' : `${months} months ago`;
+
+  const years = Math.round(months / 12);
+  return years === 1 ? 'a year ago' : `${years} years ago`;
 }
 
 function LeadRow({ lead }) {

@@ -764,6 +764,73 @@ body {
   cursor: default;
 }
 
+/* ----------------------------------------------------------- activity log */
+
+.activitySection {
+  border-top: 1px solid var(--trtl-line);
+  display: grid;
+  gap: 5px;
+  margin-top: 10px;
+  padding-top: 8px;
+}
+
+.activityComposer {
+  background: var(--trtl-surface-2);
+  border: 1px solid var(--trtl-line);
+  border-radius: var(--trtl-radius);
+  display: grid;
+  gap: 6px;
+  padding: 7px;
+}
+
+.activityActions {
+  align-items: center;
+  display: flex;
+  gap: 6px;
+  justify-content: flex-end;
+}
+
+/* Wider than a chevron — it carries a label rather than an arrow. */
+.activityCopyButton {
+  font-size: 11.5px;
+  font-weight: 600;
+  padding: 0 10px;
+  width: auto;
+}
+
+.activityStatus {
+  color: var(--trtl-red);
+  font-size: 11.5px;
+}
+
+.activityEntry {
+  border-bottom: 1px solid var(--trtl-line-soft);
+  padding: 7px 2px;
+}
+
+.activityEntry:last-child {
+  border-bottom: 0;
+}
+
+.activityMeta {
+  align-items: baseline;
+  display: flex;
+  gap: 8px;
+  justify-content: space-between;
+  margin-bottom: 2px;
+}
+
+.activityAuthor {
+  font-size: 12.5px;
+  font-weight: 700;
+}
+
+.activityTime {
+  color: var(--trtl-muted-2);
+  font-size: 11px;
+  white-space: nowrap;
+}
+
 /* --------------------------------------------------------------- messages */
 
 .message {

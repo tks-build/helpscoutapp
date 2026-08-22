@@ -9,6 +9,7 @@ const {
   TABLE_BOOKING_CRM,
   TABLE_BOOKING_MANAGERS,
   TABLE_LEADS,
+  TABLE_ACTIVITY_LOG,
   AIRTABLE_CUSTOMERS_EMAIL_FIELD = 'Client Email',
   CALENDLY_URLS,
   // Base URL of whichever CRM is current. Stacker today, TRTL later — swapping
@@ -69,6 +70,9 @@ const FIELDS = {
     // Multi-select. Short, shared vocabulary rendered as chips in the SF card.
     traits: 'Guest Traits',
     interests: 'Interests',
+    // Reverse of the Customer link on Activity Log. Airtable creates this
+    // automatically when that link field is added.
+    activityLog: 'Activity Log',
   },
   booking: {
     notes: 'Booking Notes',
@@ -95,7 +99,19 @@ const FIELDS = {
     tags: 'D-Future-Trip-Tags',
     requests: 'D-Future-Trip-Requests',
   },
+  activity: {
+    customer: 'Customer',
+    booking: 'Booking',
+    type: 'Type',
+    body: 'Body',
+    author: 'Author',
+    source: 'Source',
+    created: 'Created',
+  },
 };
+
+/** Written to Source so machine-written entries can be told apart later. */
+const ACTIVITY_SOURCE = 'Help Scout';
 
 /**
  * The only records this endpoint will write to, and the only field it will
@@ -141,6 +157,12 @@ const OPEN_LEAD_STATUSES = [
 export default async function handler(req, res) {
   if (req.method === 'POST') {
     const { bookingId, recordId, recordType, notes } = req.body || {};
+
+    // Activity entries are created rather than updated, so they take their
+    // own branch before the notes-update path below.
+    if (recordType === 'activity') {
+      return createActivityEntry(req, res);
+    }
 
     // `bookingId` is the original shape and still accepted, so an older
     // frontend deployed against a newer API keeps working.
@@ -234,6 +256,45 @@ function scoreProfileRelevance(profile) {
   return live * 1000 + past * 10 + leads;
 }
 
+/**
+ * Creates one Activity Log entry.
+ *
+ * Author comes from the Help Scout user context rather than being typed, and
+ * Source records where the entry originated so machine-written entries can be
+ * distinguished from human ones later — which matters once Aircall summaries
+ * start writing here too.
+ */
+async function createActivityEntry(req, res) {
+  const { customerId, bookingId, body, type, author } = req.body || {};
+
+  if (!customerId || !String(body || '').trim()) {
+    return sendJson(res, 400, { error: 'An activity entry needs a customer and a body' });
+  }
+
+  if (!AIRTABLE_API_KEY || !AIRTABLE_BASE_ID || !TABLE_ACTIVITY_LOG) {
+    return sendJson(res, 500, { error: 'TABLE_ACTIVITY_LOG is not configured' });
+  }
+
+  const A = FIELDS.activity;
+  const record = {
+    [A.customer]: [customerId],
+    [A.body]: String(body).trim(),
+    [A.type]: type || 'Note',
+    [A.source]: ACTIVITY_SOURCE,
+  };
+
+  if (bookingId) record[A.booking] = [bookingId];
+  if (author) record[A.author] = String(author);
+
+  try {
+    const base = new Airtable({ apiKey: AIRTABLE_API_KEY }).base(AIRTABLE_BASE_ID);
+    const created = await base(TABLE_ACTIVITY_LOG).create(record);
+    return sendJson(res, 200, { ok: true, id: created.id });
+  } catch (error) {
+    return sendJson(res, 500, { error: 'Failed to write activity entry', details: getErrorMessage(error) });
+  }
+}
+
 async function fetchCustomersByEmail(base, email) {
   const customers = await base(TABLE_CUSTOMERS)
     .select({
@@ -248,9 +309,10 @@ async function fetchCustomersByEmail(base, email) {
 async function shapeProfile(base, customer, email, mailboxId) {
   const fields = customer.fields;
   const bookingCrmTable = TABLE_BOOKING_CRM || TABLE_LEADS;
-  const [bookings, leads] = await Promise.all([
+  const [bookings, leads, activity] = await Promise.all([
     fetchRecordsByIds(base, TABLE_BOOKINGS, asArray(fields.Bookings)),
     fetchRecordsByIds(base, bookingCrmTable, asArray(fields['Booking CRM'])),
+    fetchRecordsByIds(base, TABLE_ACTIVITY_LOG, asArray(fields[FIELDS.customer.activityLog])),
   ]);
 
   const tripIds = unique([
@@ -349,7 +411,37 @@ async function shapeProfile(base, customer, email, mailboxId) {
     customer: shapedCustomer,
     leads: shapeLeads(leads, tripMap),
     bookings: shapedBookings,
+    activity: shapeActivity(activity),
   };
+}
+
+/**
+ * Activity entries, newest first.
+ *
+ * Author and timestamp are fields rather than text baked into the body, so the
+ * panel can render them consistently. The old Stacker convention of typing
+ * "19AUG26 FP:" at the start of every note drifted — "20 AUG CJ", "08JUL26 FP:"
+ * — because it depended on each person remembering the format.
+ */
+function shapeActivity(records) {
+  return records
+    .map((record) => {
+      const A = FIELDS.activity;
+      const createdRaw = firstValue(record.fields[A.created]) || record._rawJson?.createdTime || '';
+
+      return {
+        id: record.id,
+        type: firstValue(record.fields[A.type]) || 'Note',
+        body: firstValue(record.fields[A.body]) || '',
+        author: firstValue(record.fields[A.author]) || '',
+        source: firstValue(record.fields[A.source]) || '',
+        createdIso: createdRaw,
+        created: formatShortDate(createdRaw),
+        createdTimestamp: new Date(createdRaw).getTime() || 0,
+      };
+    })
+    .filter((entry) => entry.body)
+    .sort((a, b) => b.createdTimestamp - a.createdTimestamp);
 }
 
 function buildStats(bookings) {
