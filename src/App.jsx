@@ -155,6 +155,7 @@ function ProfilePanel({ profile, showEmail, context }) {
         customerId={customer?.id}
         entries={profile.activity}
         context={context}
+        crmUrl={crmUrl(customer)}
       />
 
       <a className="primaryButton" href={customer?.calendlyUrl} rel="noreferrer" target="_blank">
@@ -339,15 +340,23 @@ function LeadsTable({ leads }) {
  * so entries stay consistent instead of drifting between "19AUG26 FP:" and
  * "20 AUG CJ" depending on who wrote them.
  */
-function ActivityLog({ customerId, entries, context }) {
+function ActivityLog({ customerId, entries, context, crmUrl: crmLink }) {
   const [feed, setFeed] = useState(entries || []);
   const [body, setBody] = useState('');
   const [status, setStatus] = useState(null);
+  // Collapsed by default. The feed grows without limit and would otherwise
+  // push everything else off the bottom of the sidebar.
+  const [open, setOpen] = useState(false);
+  const [showAll, setShowAll] = useState(false);
 
   useEffect(() => setFeed(entries || []), [entries]);
 
   const user = context?.user;
-  const authorName = [user?.firstName, user?.lastName].filter(Boolean).join(' ');
+  // Some Help Scout profiles carry a placeholder surname like "." — including
+  // it produces authors called "Kat .", so drop parts with no letters in them.
+  const authorName = [user?.firstName, user?.lastName]
+    .filter((part) => /\p{L}/u.test(String(part || '')))
+    .join(' ');
   const conversationId = context?.conversation?.id;
 
   if (!customerId) return null;
@@ -417,10 +426,31 @@ function ActivityLog({ customerId, entries, context }) {
     : status === 'no-reply' ? 'No sent reply found on this conversation'
     : null;
 
+  const visible = showAll ? feed : feed.slice(0, 5);
+
   return (
     <section className="activitySection">
-      <div className="groupTitle">Activity log</div>
+      <div className="activityHeader">
+        <button className="activityToggle" onClick={() => setOpen(!open)} type="button">
+          <span className="activityChevron">{open ? '▲' : '▼'}</span>
+          Activity log
+          {feed.length > 0 && <span className="activityCount">{feed.length}</span>}
+        </button>
+        {crmLink && (
+          <a
+            className="iconButton"
+            href={crmLink}
+            rel="noreferrer"
+            target="_blank"
+            title="Open activity in CRM"
+          >
+            <span aria-hidden="true">&rarr;</span>
+          </a>
+        )}
+      </div>
 
+      {!open ? null : (
+      <>
       <div className="activityComposer">
         <textarea
           className="notesTextarea"
@@ -446,7 +476,7 @@ function ActivityLog({ customerId, entries, context }) {
         {statusMessage && <div className="activityStatus">{statusMessage}</div>}
       </div>
 
-      {feed.map((entry) => (
+      {visible.map((entry) => (
         <div className="activityEntry" key={entry.id}>
           <div className="activityMeta">
             <span className="activityAuthor">{entry.author || 'Unknown'}</span>
@@ -455,6 +485,14 @@ function ActivityLog({ customerId, entries, context }) {
           <div className="plainText multiline">{entry.body}</div>
         </div>
       ))}
+
+      {feed.length > 5 && (
+        <button className="activityMore" onClick={() => setShowAll(!showAll)} type="button">
+          {showAll ? 'Show fewer' : `Show all ${feed.length} entries`}
+        </button>
+      )}
+      </>
+      )}
     </section>
   );
 }

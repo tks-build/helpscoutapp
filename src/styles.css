@@ -774,6 +774,59 @@ body {
   padding-top: 8px;
 }
 
+.activityHeader {
+  align-items: center;
+  display: flex;
+  gap: 8px;
+  justify-content: space-between;
+}
+
+.activityToggle {
+  align-items: center;
+  background: none;
+  border: none;
+  color: var(--trtl-muted);
+  cursor: pointer;
+  display: flex;
+  font: inherit;
+  font-size: 10.5px;
+  font-weight: 700;
+  gap: 6px;
+  letter-spacing: 0.07em;
+  padding: 0;
+  text-transform: uppercase;
+}
+
+.activityToggle:hover {
+  color: var(--trtl-green);
+}
+
+.activityChevron {
+  font-size: 8px;
+}
+
+.activityCount {
+  background: var(--trtl-tag-bg);
+  border-radius: 999px;
+  color: var(--trtl-tag-ink);
+  font-size: 10px;
+  letter-spacing: 0;
+  padding: 1px 6px;
+}
+
+.activityMore {
+  background: none;
+  border: none;
+  color: var(--trtl-green);
+  cursor: pointer;
+  font: inherit;
+  font-size: 11.5px;
+  font-weight: 600;
+  justify-self: start;
+  padding: 2px 0;
+  text-decoration: underline;
+}
+
 .activityComposer {
   background: var(--trtl-surface-2);
   border: 1px solid var(--trtl-line);
