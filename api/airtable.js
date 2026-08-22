@@ -295,13 +295,42 @@ async function createActivityEntry(req, res) {
   }
 }
 
+/**
+ * Every field a guest's address might be stored in.
+ *
+ * Guests routinely write in from an address that is not their primary one, so
+ * searching only Client Email silently reports "no match" for people who are
+ * plainly in the CRM.
+ */
+const CUSTOMER_EMAIL_FIELDS = [
+  AIRTABLE_CUSTOMERS_EMAIL_FIELD,
+  'Alt Email',
+  'Alt Email 2',
+];
+
+function buildEmailFormula(fieldNames, email) {
+  const escaped = escapeFormulaString(email);
+  // TRIM guards against trailing spaces in the stored value, which are
+  // invisible in Airtable and defeat an exact comparison.
+  const clauses = fieldNames.map((name) => `LOWER(TRIM({${name}})) = '${escaped}'`);
+  return clauses.length === 1 ? clauses[0] : `OR(${clauses.join(', ')})`;
+}
+
 async function fetchCustomersByEmail(base, email) {
-  const customers = await base(TABLE_CUSTOMERS)
-    .select({
-      maxRecords: 3,
-      filterByFormula: `LOWER({${AIRTABLE_CUSTOMERS_EMAIL_FIELD}}) = '${escapeFormulaString(email)}'`,
-    })
+  const runQuery = (fieldNames) => base(TABLE_CUSTOMERS)
+    .select({ maxRecords: 3, filterByFormula: buildEmailFormula(fieldNames, email) })
     .firstPage();
+
+  let customers;
+  try {
+    customers = await runQuery(CUSTOMER_EMAIL_FIELDS);
+  } catch (error) {
+    // A field name that does not exist makes Airtable reject the whole
+    // formula, which would break the lookup for every guest rather than just
+    // this one. Fall back to the primary field so the panel keeps working.
+    console.warn('Multi-field email lookup failed, falling back to primary field', getErrorMessage(error));
+    customers = await runQuery([AIRTABLE_CUSTOMERS_EMAIL_FIELD]);
+  }
 
   return customers.map((customer) => ({ customer, email }));
 }
