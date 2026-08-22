@@ -155,7 +155,7 @@ function ProfilePanel({ profile, showEmail, context }) {
         customerId={customer?.id}
         entries={profile.activity}
         context={context}
-        crmUrl={crmUrl(customer)}
+        crmUrl={customer?.crmActivityUrl || crmUrl(customer)}
       />
 
       <a className="primaryButton" href={customer?.calendlyUrl} rel="noreferrer" target="_blank">

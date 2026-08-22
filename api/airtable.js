@@ -348,6 +348,9 @@ async function shapeProfile(base, customer, email, mailboxId) {
     fields,
     matchedEmail: email,
     crmUrl: `${CRM_BASE_URL}/crm/customers/view/cus_${customer.id}`,
+    // Stacker addresses its record tabs with a fragment. Kept here beside the
+    // base URL so the whole pattern changes in one place when TRTL lands.
+    crmActivityUrl: `${CRM_BASE_URL}/crm/customers/view/cus_${customer.id}#Activity`,
     calendlyUrl: buildCalendlyUrl(mailboxId, fields['Client Email'] || email),
 
     // --- SF "Good to know" card -------------------------------------------
