@@ -695,6 +695,15 @@ body {
   opacity: 0.75;
 }
 
+.leadGroup {
+  display: grid;
+  gap: 5px;
+}
+
+.leadGroup + .leadGroup {
+  margin-top: 8px;
+}
+
 .leadRequests {
   background: var(--trtl-surface-2);
   border-top: 1px solid var(--trtl-line-soft);

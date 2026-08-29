@@ -142,26 +142,33 @@ const FEEDBACK_CRITICAL_FIELDS = [
   ['other', 'Other Comments Critical Feedback'],
 ];
 
-const OPEN_LEAD_STATUSES = [
-  'Future Interest',
-  'Registration of Interest',
-  'Waitlist',
-  'Strong Interest',
-  'Pending Deposit',
-  'Deposit Received',
-  'Ready to Process',
-  'Closed Come Back',
-  'Closed Lost',
-];
+/**
+ * Lead statuses, grouped by what a BM should do about them.
+ *
+ * Anything not listed here counts as open — including a blank status, which is
+ * an oversight rather than a decision and should stay visible.
+ *
+ * Previously the panel showed lost leads and hid converted ones, which meant a
+ * lead's preliminary notes became unreachable the moment it succeeded.
+ */
+const CONVERTED_LEAD_STATUSES = ['Done'];
+const CLOSED_LEAD_STATUSES = ['Closed Come Back', 'Closed Lost'];
+
+function getLeadGroup(status) {
+  if (CONVERTED_LEAD_STATUSES.includes(status)) return 'converted';
+  if (CLOSED_LEAD_STATUSES.includes(status)) return 'closed';
+  return 'open';
+}
 
 export default async function handler(req, res) {
   if (req.method === 'POST') {
     const { bookingId, recordId, recordType, notes } = req.body || {};
 
-    // Activity entries are created rather than updated, so they take their
-    // own branch before the notes-update path below.
+    // Activity now lives in Postgres — see api/activity.js. Kept as an
+    // explicit error rather than silently falling through, in case an older
+    // frontend is still deployed and pointing here.
     if (recordType === 'activity') {
-      return createActivityEntry(req, res);
+      return sendJson(res, 410, { error: 'Activity entries moved to /api/activity' });
     }
 
     // `bookingId` is the original shape and still accepted, so an older
@@ -338,10 +345,12 @@ async function fetchCustomersByEmail(base, email) {
 async function shapeProfile(base, customer, email, mailboxId) {
   const fields = customer.fields;
   const bookingCrmTable = TABLE_BOOKING_CRM || TABLE_LEADS;
-  const [bookings, leads, activity] = await Promise.all([
+  // Activity is no longer read from here — it lives in Postgres and the panel
+  // fetches it separately. Dropping it also removes a request per panel load,
+  // which matters against Airtable's 5-per-second cap.
+  const [bookings, leads] = await Promise.all([
     fetchRecordsByIds(base, TABLE_BOOKINGS, asArray(fields.Bookings)),
     fetchRecordsByIds(base, bookingCrmTable, asArray(fields['Booking CRM'])),
-    fetchRecordsByIds(base, TABLE_ACTIVITY_LOG, asArray(fields[FIELDS.customer.activityLog])),
   ]);
 
   const tripIds = unique([
@@ -443,7 +452,6 @@ async function shapeProfile(base, customer, email, mailboxId) {
     customer: shapedCustomer,
     leads: shapeLeads(leads, tripMap),
     bookings: shapedBookings,
-    activity: shapeActivity(activity),
   };
 }
 
@@ -609,10 +617,10 @@ function shapeLeads(records, tripMap) {
         dateAdded: formatShortDate(dateRaw),
         dateAddedTimestamp: parseDate(dateRaw)?.getTime() || 0,
         notes: firstValue(fields[L.notes]) || '',
+        group: getLeadGroup(status),
         crmUrl: `${CRM_BASE_URL}/crm/booking-crm/view/bcr_${record.id}`,
       };
     })
-    .filter((lead) => OPEN_LEAD_STATUSES.includes(lead.status))
     .sort((a, b) => b.dateAddedTimestamp - a.dateAddedTimestamp);
 }
 

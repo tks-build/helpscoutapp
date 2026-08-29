@@ -2,6 +2,19 @@ import HelpScout from '@helpscout/javascript-sdk';
 import { DefaultStyle, Heading, Spinner, Text, useSetAppHeight } from '@helpscout/ui-kit';
 import { useEffect, useMemo, useState } from 'react';
 
+/**
+ * Activity log rollout flags.
+ *
+ * BMs are still writing into Stacker's native activity feed, so the panel must
+ * not offer a second place to write — notes split across two systems are worse
+ * than notes in the wrong one, because neither is complete.
+ *
+ * The Postgres store, API and UI are built and working. Set these to true when
+ * the team moves across. The link through to Stacker stays visible either way.
+ */
+const ACTIVITY_WRITE_ENABLED = false;
+const ACTIVITY_COPY_REPLY_ENABLED = false;
+
 function App() {
   const appRef = useSetAppHeight();
   const [context, setContext] = useState(null);
@@ -153,7 +166,7 @@ function ProfilePanel({ profile, showEmail, context }) {
 
       <ActivityLog
         customerId={customer?.id}
-        entries={profile.activity}
+        customerEmail={customer?.matchedEmail || fields['Client Email']}
         context={context}
         crmUrl={customer?.crmActivityUrl || crmUrl(customer)}
       />
@@ -316,20 +329,51 @@ function ContactCard({ customer }) {
 function LeadsTable({ leads }) {
   if (!leads?.length) return null;
 
+  // Older API responses have no group, in which case everything is open.
+  const open = leads.filter((lead) => !lead.group || lead.group === 'open');
+  const converted = leads.filter((lead) => lead.group === 'converted');
+  const closed = leads.filter((lead) => lead.group === 'closed');
+
   return (
     <section className="section">
-      <div className="dataTable leadsTable">
-        <div className="tableHeader">
-          <span>Lead Trip</span>
-          <span>Status</span>
-          <span>Date</span>
-          <span />
-        </div>
-        {leads.map((lead) => (
-          <LeadRow key={lead.id} lead={lead} />
-        ))}
-      </div>
+      <LeadGroup leads={open} title="Open leads" defaultOpen />
+      <LeadGroup leads={converted} title="Converted" />
+      <LeadGroup leads={closed} title="Closed" />
     </section>
+  );
+}
+
+/**
+ * Converted and closed leads stay reachable but collapsed. A repeat guest can
+ * carry a dozen of each, and the lead record holds the preliminary notes a BM
+ * wrote before the trip was booked — losing that at conversion loses the story.
+ */
+function LeadGroup({ leads, title, defaultOpen = false }) {
+  const [open, setOpen] = useState(defaultOpen);
+  if (!leads.length) return null;
+
+  return (
+    <div className="leadGroup">
+      <button className="activityToggle" onClick={() => setOpen(!open)} type="button">
+        <span className="activityChevron">{open ? '▲' : '▼'}</span>
+        {title}
+        <span className="activityCount">{leads.length}</span>
+      </button>
+
+      {open && (
+        <div className="dataTable leadsTable">
+          <div className="tableHeader">
+            <span>Lead Trip</span>
+            <span>Status</span>
+            <span>Date</span>
+            <span />
+          </div>
+          {leads.map((lead) => (
+            <LeadRow key={lead.id} lead={lead} />
+          ))}
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -340,8 +384,8 @@ function LeadsTable({ leads }) {
  * so entries stay consistent instead of drifting between "19AUG26 FP:" and
  * "20 AUG CJ" depending on who wrote them.
  */
-function ActivityLog({ customerId, entries, context, crmUrl: crmLink }) {
-  const [feed, setFeed] = useState(entries || []);
+function ActivityLog({ customerId, customerEmail, context, crmUrl: crmLink }) {
+  const [feed, setFeed] = useState([]);
   const [body, setBody] = useState('');
   const [status, setStatus] = useState(null);
   // Collapsed by default. The feed grows without limit and would otherwise
@@ -349,7 +393,27 @@ function ActivityLog({ customerId, entries, context, crmUrl: crmLink }) {
   const [open, setOpen] = useState(false);
   const [showAll, setShowAll] = useState(false);
 
-  useEffect(() => setFeed(entries || []), [entries]);
+  // Fetched separately from the Airtable profile, because the feed lives in
+  // Postgres. Only loaded once the section is opened — most conversations
+  // never need it, and it keeps the panel's first paint fast.
+  useEffect(() => {
+    if (!open || !customerId) return undefined;
+
+    let active = true;
+    const params = new URLSearchParams();
+    if (customerId) params.set('customerRef', customerId);
+    if (customerEmail) params.set('email', customerEmail);
+
+    fetch(`/api/activity?${params}`)
+      .then((response) => response.json())
+      .then((payload) => {
+        if (!active) return;
+        setFeed(payload.entries || []);
+      })
+      .catch((error) => console.error('Could not load activity:', error.message));
+
+    return () => { active = false; };
+  }, [open, customerId, customerEmail]);
 
   const user = context?.user;
   // Some Help Scout profiles carry a placeholder surname like "." — including
@@ -367,15 +431,16 @@ function ActivityLog({ customerId, entries, context, crmUrl: crmLink }) {
 
     setStatus('saving');
     try {
-      const res = await fetch('/api/airtable', {
+      const res = await fetch('/api/activity', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          recordType: 'activity',
-          customerId,
+          customerRef: customerId,
+          customerEmail,
           body: text,
-          type: 'Note',
-          author: authorName,
+          type: 'note',
+          authorName,
+          authorEmail: user?.email,
         }),
       });
       const payload = await res.json();
@@ -383,16 +448,7 @@ function ActivityLog({ customerId, entries, context, crmUrl: crmLink }) {
 
       // Shown immediately rather than waiting for a refetch — the entry is
       // already saved, and a BM mid-call should see it land.
-      setFeed([
-        {
-          id: payload.id || `local-${Date.now()}`,
-          body: text,
-          author: authorName,
-          type: 'Note',
-          createdIso: new Date().toISOString(),
-        },
-        ...feed,
-      ]);
+      setFeed([payload.entry, ...feed]);
       setBody('');
       setStatus(null);
     } catch (err) {
@@ -431,11 +487,15 @@ function ActivityLog({ customerId, entries, context, crmUrl: crmLink }) {
   return (
     <section className="activitySection">
       <div className="activityHeader">
-        <button className="activityToggle" onClick={() => setOpen(!open)} type="button">
-          <span className="activityChevron">{open ? '▲' : '▼'}</span>
-          Activity log
-          {feed.length > 0 && <span className="activityCount">{feed.length}</span>}
-        </button>
+        {ACTIVITY_WRITE_ENABLED ? (
+          <button className="activityToggle" onClick={() => setOpen(!open)} type="button">
+            <span className="activityChevron">{open ? '▲' : '▼'}</span>
+            Activity log
+            {feed.length > 0 && <span className="activityCount">{feed.length}</span>}
+          </button>
+        ) : (
+          <span className="groupTitle">Activity log</span>
+        )}
         {crmLink && (
           <a
             className="iconButton"
@@ -449,7 +509,7 @@ function ActivityLog({ customerId, entries, context, crmUrl: crmLink }) {
         )}
       </div>
 
-      {!open ? null : (
+      {!ACTIVITY_WRITE_ENABLED || !open ? null : (
       <>
       <div className="activityComposer">
         <textarea
@@ -459,7 +519,7 @@ function ActivityLog({ customerId, entries, context, crmUrl: crmLink }) {
           onChange={(event) => setBody(event.target.value)}
         />
         <div className="activityActions">
-          {conversationId && (
+          {ACTIVITY_COPY_REPLY_ENABLED && conversationId && (
             <button className="chevronButton activityCopyButton" onClick={handleCopyReply} type="button">
               {status === 'fetching' ? 'Loading…' : 'Copy last reply'}
             </button>
@@ -480,7 +540,7 @@ function ActivityLog({ customerId, entries, context, crmUrl: crmLink }) {
         <div className="activityEntry" key={entry.id}>
           <div className="activityMeta">
             <span className="activityAuthor">{entry.author || 'Unknown'}</span>
-            <span className="activityTime">{relativeTime(entry.createdIso)}</span>
+            <span className="activityTime">{relativeTime(entry.occurredAt)}</span>
           </div>
           <div className="plainText multiline">{entry.body}</div>
         </div>
