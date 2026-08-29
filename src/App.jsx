@@ -710,7 +710,20 @@ function BookingRow({ booking }) {
       <div className={`tableRow tripRow ${booking.group}`}>
         <span className="mainCell">
           {booking.name}
-          {booking.coordinator && <span className="coordinatorName">{booking.coordinator}</span>}
+          <span className="coordinatorName">
+            {booking.coordinator}
+            {booking.feedback?.internalRating != null && (
+              <span className={`ratingChip ${ratingTone(booking.feedback.internalRating)}`}>
+                {booking.feedback.internalRating}/5
+              </span>
+            )}
+          </span>
+          {/* One-line summary on the collapsed row so a poor trip is visible
+              without opening anything. Truncated by CSS rather than by us,
+              so the full text is still there when expanded. */}
+          {booking.feedback?.summary && (
+            <span className="feedbackTeaser">{booking.feedback.summary}</span>
+          )}
         </span>
         <span>{booking.startDate}</span>
         <div className="rowActions">
@@ -721,12 +734,103 @@ function BookingRow({ booking }) {
         </div>
       </div>
       {expanded && (
-        <NotesEditor
-          recordId={booking.id}
-          recordType="booking"
-          initialNotes={booking.notes}
-          placeholder="Booking Notes"
-        />
+        <>
+          <NotesEditor
+            recordId={booking.id}
+            recordType="booking"
+            initialNotes={booking.notes}
+            placeholder="Booking Notes"
+          />
+          <BookingExtras booking={booking} />
+          <BookingFeedback feedback={booking.feedback} />
+        </>
+      )}
+    </div>
+  );
+}
+
+function ratingTone(rating) {
+  if (rating >= 4.75) return 'ratingGood';
+  if (rating < 4) return 'ratingPoor';
+  return '';
+}
+
+/**
+ * Ops fields and the roommate request, directly beneath Booking Notes.
+ *
+ * Ops asked for the chasing fields on upcoming trips specifically — on a past
+ * booking they are history nobody acts on.
+ */
+function BookingExtras({ booking }) {
+  const ops = booking.ops || {};
+  const isUpcoming = booking.group === 'upcoming' || booking.group === 'active';
+  const showOps = isUpcoming && (ops.coordDecision || ops.lastChased || ops.lastChasedNotes);
+
+  if (!showOps && !booking.roommateRequest && !booking.bookingType) return null;
+
+  return (
+    <div className="bookingExtras">
+      {booking.bookingType && <Touch label="Booking type" value={booking.bookingType} />}
+      {booking.roommateRequest && <Touch label="Roommate request" value={booking.roommateRequest} />}
+      {showOps && (
+        <>
+          <Touch label="Coord decision" value={ops.coordDecision} />
+          <Touch label="Last chased" value={ops.lastChased} note={ops.lastChasedNotes} />
+        </>
+      )}
+    </div>
+  );
+}
+
+/**
+ * Post-trip feedback. Ratings and the headline summary show immediately; the
+ * per-area detail sits behind a further toggle, because a BM checking a guest
+ * before a call wants the shape of the trip, not the transcript.
+ */
+function BookingFeedback({ feedback }) {
+  const [showDetail, setShowDetail] = useState(false);
+  if (!feedback) return null;
+
+  const hasDetail = feedback.summaries?.length > 0 || feedback.critical?.length > 0;
+
+  return (
+    <div className="bookingFeedback">
+      <div className="feedbackRatings">
+        {feedback.internalRating != null && (
+          <span className={`ratingChip ${ratingTone(feedback.internalRating)}`}>
+            Internal {feedback.internalRating}/5
+          </span>
+        )}
+        {feedback.groupDynamicsRating != null && (
+          <span className="ratingChip">Group {feedback.groupDynamicsRating}/5</span>
+        )}
+        {feedback.callDate && (
+          <span className="feedbackCall">
+            Call {feedback.callDate}{feedback.callHeldBy ? ` · ${feedback.callHeldBy}` : ''}
+          </span>
+        )}
+      </div>
+
+      {feedback.summary && <div className="plainText multiline">{feedback.summary}</div>}
+
+      {hasDetail && (
+        <button className="activityMore" onClick={() => setShowDetail(!showDetail)} type="button">
+          {showDetail ? 'Hide detail' : 'Full feedback'}
+        </button>
+      )}
+
+      {showDetail && (
+        <>
+          {feedback.summaries.map((item) => (
+            <Touch key={item.key} label={item.label} value={item.text} />
+          ))}
+          {feedback.critical.map((item) => (
+            <div className="criticalNote" key={item.key}>
+              <span className="label">{item.label}</span>
+              <div className="plainText multiline">{item.text}</div>
+            </div>
+          ))}
+        </>
       )}
     </div>
   );

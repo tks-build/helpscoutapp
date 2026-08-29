@@ -710,6 +710,83 @@ body {
   padding: 6px 7px 0;
 }
 
+/* -------------------------------------------------- booking detail blocks */
+
+.ratingChip {
+  background: var(--trtl-tag-bg);
+  border-radius: 999px;
+  color: var(--trtl-tag-ink);
+  font-size: 10.5px;
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+  margin-left: 6px;
+  padding: 1px 7px;
+  white-space: nowrap;
+}
+
+.ratingGood {
+  background: var(--trtl-green-soft);
+  color: var(--trtl-green);
+}
+
+/* Below 4 out of 5. Amber rather than red — a weak trip is worth noticing,
+   not an emergency. */
+.ratingPoor {
+  background: var(--trtl-amber-bg);
+  color: var(--trtl-amber);
+}
+
+/* Truncated to one line on the collapsed row. The full text is rendered
+   again when the row opens, so nothing is actually lost. */
+.feedbackTeaser {
+  color: var(--trtl-muted);
+  display: block;
+  font-size: 11px;
+  font-weight: 400;
+  margin-top: 2px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.bookingExtras,
+.bookingFeedback {
+  background: var(--trtl-surface-2);
+  border-top: 1px solid var(--trtl-line-soft);
+  display: grid;
+  gap: 6px;
+  padding: 7px;
+}
+
+.feedbackRatings {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+.feedbackRatings .ratingChip {
+  margin-left: 0;
+}
+
+.feedbackCall {
+  color: var(--trtl-muted);
+  font-size: 11px;
+}
+
+/* "Critical feedback" in your CRM means the things that went wrong, so these
+   carry the same amber treatment as the client flag. */
+.criticalNote {
+  background: var(--trtl-amber-bg);
+  border: 1px solid var(--trtl-amber-line);
+  border-radius: var(--trtl-radius-sm);
+  padding: 5px 7px;
+}
+
+.criticalNote .label {
+  color: var(--trtl-amber);
+}
+
 /* ------------------------------------------------------------ notes panel */
 
 .notesPanel {
