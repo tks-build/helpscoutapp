@@ -375,15 +375,21 @@ async function shapeProfile(base, customer, email, mailboxId) {
   const tripMap = new Map(trips.map((trip) => [trip.id, trip]));
 
   const coordinatorMap = new Map();
+  // Booking manager record id -> name, so link fields pointing at this table
+  // can be resolved without another request. Used for "Feedback Call Held By",
+  // which would otherwise render as recXXXXXXXX.
+  const managerNameById = new Map();
+
   for (const bm of bookingManagers) {
     const name = firstValue(bm.fields['Name']);
+    managerNameById.set(bm.id, name);
     for (const tripId of asArray(bm.fields['Trips']).filter(isRecordId)) {
       coordinatorMap.set(tripId, name);
     }
   }
 
   const C = FIELDS.customer;
-  const shapedBookings = shapeBookings(bookings, tripMap, coordinatorMap);
+  const shapedBookings = shapeBookings(bookings, tripMap, coordinatorMap, managerNameById);
 
   const shapedCustomer = {
     id: customer.id,
@@ -628,7 +634,7 @@ function shapeLeads(records, tripMap) {
     .sort((a, b) => b.dateAddedTimestamp - a.dateAddedTimestamp);
 }
 
-function shapeBookings(records, tripMap, coordinatorMap) {
+function shapeBookings(records, tripMap, coordinatorMap, managerNameById) {
   const today = startOfDay(new Date());
   const rows = records.map((record) => {
     const fields = record.fields;
@@ -666,7 +672,7 @@ function shapeBookings(records, tripMap, coordinatorMap) {
         lastChasedNotes: firstValue(fields[B.lastChasedNotes]),
       },
 
-      feedback: shapeFeedback(fields),
+      feedback: shapeFeedback(fields, managerNameById),
     };
   });
 
@@ -688,8 +694,17 @@ function shapeBookings(records, tripMap, coordinatorMap) {
  * Returns null when a feedback call has not happened, so the UI can skip the
  * block entirely rather than render empty labels.
  */
-function shapeFeedback(fields) {
+function shapeFeedback(fields, managerNameById = new Map()) {
   const B = FIELDS.booking;
+
+  // Link field, so it arrives as a record id. Resolved against the booking
+  // managers already in memory; if it points at some other table we show
+  // nothing rather than a raw record id, which tells a BM less than nothing.
+  const heldByRaw = asArray(fields[B.feedbackCallHeldBy]);
+  const callHeldBy = heldByRaw
+    .map((value) => (isRecordId(value) ? managerNameById.get(value) || '' : firstValue(value)))
+    .filter(Boolean)
+    .join(', ');
 
   const summaries = FEEDBACK_SUMMARY_FIELDS
     .map(([key, name]) => ({ key, label: name.replace(/^Summary of /, '').replace(/ Feedback$/, ''), text: firstValue(fields[name]) }))
@@ -703,7 +718,7 @@ function shapeFeedback(fields) {
     internalRating: toNumber(fields[B.internalRating]),
     groupDynamicsRating: toNumber(fields[B.groupDynamicsRating]),
     callDate: formatShortDate(fields[B.feedbackCallDate]),
-    callHeldBy: firstValue(fields[B.feedbackCallHeldBy]),
+    callHeldBy,
     summary: firstValue(fields[B.feedbackSummary]) || firstValue(fields[B.feedbackSummaryAi]),
     summaries,
     critical,
