@@ -79,10 +79,23 @@ const FIELDS = {
     bookingType: 'Booking Type',
     roommateRequest: 'Roommate Request',
     bookingThroughAgent: 'Booking through Agent',
-    // Ops requested these directly beneath Booking Notes on upcoming trips.
+    // Ops fields, shown beneath Booking Notes on upcoming trips.
     coordDecision: 'Coord Decision',
-    lastChased: 'Last Chased',
-    lastChasedNotes: 'Last Chased Notes',
+    // Both are read: "Chased Date" may or may not exist, and reading a field
+    // that is absent simply returns nothing rather than erroring. Whichever is
+    // populated wins, so it works either way.
+    chasedDate: 'Chased Date',
+    lastChased: 'Last Chased',            // Date
+    lastChasedNotes: 'Last Chased Notes', // Long text
+    // Ops banner on upcoming trips.
+    paymentPending: 'Payment Pending',   // Formula, currency. 0 when paid or cancelled.
+    daysUntilStart: 'Days Until Start',  // Lookup from Trip
+    // "Extras" itself is a link field and returns record ids, so the lookup of
+    // the category is used instead. Extras Cost is a rollup of the whole
+    // booking, not per extra.
+    extras: 'Extras (from Extras)',
+    extrasCost: 'Extras Cost',
+    extrasNotes: 'Extras Notes',
     // Post-trip feedback. Shown on past bookings only.
     internalRating: 'Internal Rating out of 5',
     groupDynamicsRating: 'Group Dynamics Rating out of 5 (by guest)',
@@ -668,8 +681,19 @@ function shapeBookings(records, tripMap, coordinatorMap, managerNameById) {
       // Ops fields. Rendered under Booking Notes on upcoming trips only.
       ops: {
         coordDecision: firstValue(fields[B.coordDecision]),
-        lastChased: formatShortDate(fields[B.lastChased]),
+        lastChased: formatShortDate(fields[B.chasedDate]) || formatShortDate(fields[B.lastChased]),
         lastChasedNotes: firstValue(fields[B.lastChasedNotes]),
+        // Zero means paid in full or cancelled, so it is treated as nothing
+        // owing — "Payment pending $0" would be noise on every booking.
+        paymentPending: formatCurrency(toNumber(fields[B.paymentPending])),
+        // Raw number too, so the UI can decide on emphasis without parsing a
+        // formatted currency string back into a value.
+        paymentPendingAmount: toNumber(fields[B.paymentPending]),
+        daysUntilStart: toNumber(fields[B.daysUntilStart]),
+        // Lookups arrive as arrays.
+        extras: unique(asArray(fields[B.extras]).map(firstValue).filter(Boolean)),
+        extrasCost: formatCurrency(toNumber(fields[B.extrasCost])),
+        extrasNotes: asArray(fields[B.extrasNotes]).map(firstValue).filter(Boolean).join(' · '),
       },
 
       feedback: shapeFeedback(fields, managerNameById),
@@ -731,6 +755,20 @@ function shapeFeedback(fields, managerNameById = new Map()) {
     || critical.length;
 
   return hasAnything ? feedback : null;
+}
+
+/**
+ * Whole-dollar currency. Zero is shown rather than hidden — "$0 pending" is a
+ * useful confirmation to Ops that a booking is settled, which is different
+ * from the field being blank.
+ */
+function formatCurrency(amount) {
+  if (typeof amount !== 'number' || !Number.isFinite(amount)) return '';
+  return new Intl.NumberFormat('en-AU', {
+    style: 'currency',
+    currency: 'AUD',
+    maximumFractionDigits: 0,
+  }).format(amount);
 }
 
 function toNumber(value) {

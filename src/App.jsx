@@ -718,6 +718,7 @@ function BookingRow({ booking }) {
 
   return (
     <div className="bookingRowWrapper">
+      <OpsBanner booking={booking} />
       <div className={`tableRow tripRow ${booking.group}`}>
         <span className="mainCell">
           {booking.name}
@@ -802,6 +803,49 @@ function BookingExtras({ booking }) {
           <Touch label="Last chased" value={ops.lastChased} note={ops.lastChasedNotes} />
         </>
       )}
+      {ops.extrasNotes && <Touch label="Extras notes" value={ops.extrasNotes} />}
+    </div>
+  );
+}
+
+/**
+ * Ops banner, on upcoming trips only.
+ *
+ * Sits above the booking notes rather than inside the expanded detail: money
+ * owed and days remaining are the things someone needs to see while scanning,
+ * not after deciding to look closer.
+ *
+ * Extras show as categories. Price is only attached to the ones where it
+ * changes what Ops do — extra nights and extensions.
+ */
+const PRICED_EXTRAS = ['Arrival Hotel Nights', 'Departure Hotel Nights', 'Trip Extension'];
+
+function OpsBanner({ booking }) {
+  const ops = booking.ops || {};
+  const isUpcoming = booking.group === 'upcoming' || booking.group === 'active';
+  if (!isUpcoming) return null;
+
+  const extras = ops.extras || [];
+  const hasAnything = ops.paymentPending || ops.daysUntilStart != null || extras.length > 0;
+  if (!hasAnything) return null;
+
+  // Amber only when something is actually owed. $0 still shows, in neutral —
+  // it confirms the booking is settled rather than leaving Ops to wonder.
+  const owes = (ops.paymentPendingAmount || 0) > 0;
+
+  return (
+    <div className="opsBanner">
+      {ops.paymentPending && (
+        <span className={`chip opsChip ${owes ? 'opsMoney' : ''}`}>
+          {ops.paymentPending} pending
+        </span>
+      )}
+      {ops.daysUntilStart != null && (
+        <span className="chip opsChip">{ops.daysUntilStart} days to start</span>
+      )}
+      {extras.map((extra) => (
+        <span className="chip opsChip" key={extra}>{extra}</span>
+      ))}
     </div>
   );
 }

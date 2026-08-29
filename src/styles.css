@@ -712,6 +712,34 @@ body {
 
 /* -------------------------------------------------- booking detail blocks */
 
+/* Ops banner sits above the trip row, not inside its expanded detail — money
+   owed and days remaining need to be visible while scanning. */
+.opsBanner {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding: 6px 7px 0;
+}
+
+.opsChip {
+  background: var(--trtl-surface);
+  border: 1px solid var(--trtl-line);
+  color: var(--trtl-ink-2);
+  font-size: 10.5px;
+}
+
+.opsMoney {
+  background: var(--trtl-amber-bg);
+  border-color: var(--trtl-amber-line);
+  color: var(--trtl-amber);
+}
+
+.opsPrice {
+  color: var(--trtl-muted);
+  font-weight: 700;
+  margin-left: 5px;
+}
+
 .ratingChip {
   background: var(--trtl-tag-bg);
   border-radius: 999px;
