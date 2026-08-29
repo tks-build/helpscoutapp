@@ -88,7 +88,11 @@ const FIELDS = {
     groupDynamicsRating: 'Group Dynamics Rating out of 5 (by guest)',
     feedbackCallDate: 'Feedback Call Date',
     feedbackCallHeldBy: 'Feedback Call Held By',
-    feedbackSummary: 'Summary (Summary & Other Feedback)',
+    // The human-written summary, which is populated. The AI field below
+    // summarises it and is currently ungenerated across the base, so it is
+    // only a fallback.
+    feedbackSummary: 'Summary & Other Feedback',
+    feedbackSummaryAi: 'Summary (Summary & Other Feedback)',
   },
   lead: {
     // Native long text on Booking CRM — editable, so the panel can write to it
@@ -700,7 +704,7 @@ function shapeFeedback(fields) {
     groupDynamicsRating: toNumber(fields[B.groupDynamicsRating]),
     callDate: formatShortDate(fields[B.feedbackCallDate]),
     callHeldBy: firstValue(fields[B.feedbackCallHeldBy]),
-    summary: firstValue(fields[B.feedbackSummary]),
+    summary: firstValue(fields[B.feedbackSummary]) || firstValue(fields[B.feedbackSummaryAi]),
     summaries,
     critical,
   };
@@ -744,7 +748,21 @@ function buildCalendlyUrl(mailboxId, email) {
 
 function firstValue(value) {
   if (Array.isArray(value)) return firstValue(value[0]);
-  if (value && typeof value === 'object') return value.name || value.email || value.url || JSON.stringify(value);
+
+  if (value && typeof value === 'object') {
+    // Airtable AI fields return { state, value, isStale, errorType } rather
+    // than a string. state is 'generated', 'empty' or 'error' — anything but a
+    // real string means there is nothing to show yet.
+    if ('state' in value || 'isStale' in value) {
+      return typeof value.value === 'string' ? value.value : '';
+    }
+
+    // Collaborators, attachments and similar.
+    // Never JSON.stringify as a fallback: raw JSON in the panel is worse than
+    // an empty field, because it looks like corruption to whoever sees it.
+    return value.name || value.email || value.url || '';
+  }
+
   return value ? String(value) : '';
 }
 
