@@ -718,7 +718,6 @@ function BookingRow({ booking }) {
 
   return (
     <div className="bookingRowWrapper">
-      <OpsBanner booking={booking} />
       <div className={`tableRow tripRow ${booking.group}`}>
         <span className="mainCell">
           {booking.name}
@@ -745,6 +744,8 @@ function BookingRow({ booking }) {
           <ExternalLink href={crmUrl(booking)} label="Open booking in CRM" />
         </div>
       </div>
+
+      <OpsBanner booking={booking} />
       {expanded && (
         <>
           {/* Past trips open onto their feedback rather than an editor —
@@ -834,7 +835,7 @@ function OpsBanner({ booking }) {
   const owes = (ops.paymentPendingAmount || 0) > 0;
 
   return (
-    <div className="opsBanner">
+    <div className={`opsBanner ${booking.group}`}>
       {ops.paymentPending && (
         <span className={`chip opsChip ${owes ? 'opsMoney' : ''}`}>
           {ops.paymentPending} pending

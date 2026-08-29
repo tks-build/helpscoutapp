@@ -712,13 +712,30 @@ body {
 
 /* -------------------------------------------------- booking detail blocks */
 
-/* Ops banner sits above the trip row, not inside its expanded detail — money
-   owed and days remaining need to be visible while scanning. */
+/* Sits directly beneath its trip row as a strip of its own, tinted to match so
+   the two read as one block. Above the row it looked unattached — floating
+   over the trip name rather than describing it. */
 .opsBanner {
+  border-top: 1px solid var(--trtl-line-soft);
   display: flex;
   flex-wrap: wrap;
-  gap: 4px;
-  padding: 6px 7px 0;
+  gap: 5px;
+  padding: 7px;
+}
+
+.opsBanner.upcoming {
+  background: var(--trtl-green-soft);
+  border-top-color: var(--trtl-green-line);
+}
+
+.opsBanner.active {
+  background: var(--trtl-green-soft);
+  border-top-color: var(--trtl-green-line);
+}
+
+.opsBanner.recent {
+  background: var(--trtl-amber-bg);
+  border-top-color: var(--trtl-amber-line);
 }
 
 .opsChip {
