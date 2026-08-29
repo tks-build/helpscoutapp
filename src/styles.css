@@ -695,13 +695,13 @@ body {
   opacity: 0.75;
 }
 
-.leadGroup {
+.collapsibleGroup {
   display: grid;
-  gap: 5px;
+  gap: 4px;
 }
 
-.leadGroup + .leadGroup {
-  margin-top: 8px;
+.collapsibleGroup + .collapsibleGroup {
+  margin-top: 7px;
 }
 
 .leadRequests {
@@ -767,6 +767,14 @@ body {
 
 .feedbackRatings .ratingChip {
   margin-left: 0;
+}
+
+/* Stated rather than left blank — an empty panel reads as broken, whereas
+   "no feedback given" is itself useful before a call. */
+.noFeedback {
+  color: var(--trtl-muted-2);
+  font-size: 12px;
+  font-style: italic;
 }
 
 .feedbackCall {

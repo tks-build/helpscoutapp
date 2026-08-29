@@ -349,30 +349,40 @@ function LeadsTable({ leads }) {
  * wrote before the trip was booked — losing that at conversion loses the story.
  */
 function LeadGroup({ leads, title, defaultOpen = false }) {
-  const [open, setOpen] = useState(defaultOpen);
   if (!leads.length) return null;
 
   return (
-    <div className="leadGroup">
+    <CollapsibleGroup title={title} count={leads.length} defaultOpen={defaultOpen}>
+      <div className="dataTable leadsTable">
+        <div className="tableHeader">
+          <span>Lead Trip</span>
+          <span>Status</span>
+          <span>Date</span>
+          <span />
+        </div>
+        {leads.map((lead) => (
+          <LeadRow key={lead.id} lead={lead} />
+        ))}
+      </div>
+    </CollapsibleGroup>
+  );
+}
+
+/**
+ * Shared collapsible section header, used by both trip and lead groups so the
+ * two read identically. Groups needing action open by default; history does not.
+ */
+function CollapsibleGroup({ title, count, defaultOpen = false, children }) {
+  const [open, setOpen] = useState(defaultOpen);
+
+  return (
+    <div className="collapsibleGroup">
       <button className="activityToggle" onClick={() => setOpen(!open)} type="button">
         <span className="activityChevron">{open ? '▲' : '▼'}</span>
         {title}
-        <span className="activityCount">{leads.length}</span>
+        {count > 0 && <span className="activityCount">{count}</span>}
       </button>
-
-      {open && (
-        <div className="dataTable leadsTable">
-          <div className="tableHeader">
-            <span>Lead Trip</span>
-            <span>Status</span>
-            <span>Date</span>
-            <span />
-          </div>
-          {leads.map((lead) => (
-            <LeadRow key={lead.id} lead={lead} />
-          ))}
-        </div>
-      )}
+      {open && children}
     </div>
   );
 }
@@ -631,8 +641,10 @@ function TripsSection({ bookings }) {
   return (
     <section className="tripsSection">
       <div className="tripGroups">
-        <TripGroup rows={active} title="Active Trips" />
-        <TripGroup rows={upcoming} title="Upcoming Trips" />
+        {/* Live and upcoming trips are what a BM acts on, so they stay open.
+            History collapses — a ten-trip guest is otherwise most of the panel. */}
+        <TripGroup rows={active} title="Active Trips" defaultOpen />
+        <TripGroup rows={upcoming} title="Upcoming Trips" defaultOpen />
         <TripGroup rows={past} title="Past Trips" />
         <TripGroup rows={cancelled} title="Cancelled Trips" />
       </div>
@@ -640,18 +652,17 @@ function TripsSection({ bookings }) {
   );
 }
 
-function TripGroup({ rows, title }) {
+function TripGroup({ rows, title, defaultOpen = false }) {
   if (!rows?.length) return null;
 
   return (
-    <div className="tripGroup">
-      <div className="groupTitle">{title}</div>
+    <CollapsibleGroup title={title} count={rows.length} defaultOpen={defaultOpen}>
       <div className="dataTable tripsTable">
         {rows.map((booking) => (
           <BookingRow key={booking.id} booking={booking} />
         ))}
       </div>
-    </div>
+    </CollapsibleGroup>
   );
 }
 
@@ -735,14 +746,27 @@ function BookingRow({ booking }) {
       </div>
       {expanded && (
         <>
-          <NotesEditor
-            recordId={booking.id}
-            recordType="booking"
-            initialNotes={booking.notes}
-            placeholder="Booking Notes"
-          />
+          {/* Past trips open onto their feedback rather than an editor —
+              nobody is updating booking notes on a trip that has finished, and
+              what they actually want is what the guest said about it.
+              "Recent" trips keep the editor: they have only just ended and
+              feedback usually has not been collected yet. */}
+          {booking.group !== 'past' && (
+            <NotesEditor
+              recordId={booking.id}
+              recordType="booking"
+              initialNotes={booking.notes}
+              placeholder="Booking Notes"
+            />
+          )}
           <BookingExtras booking={booking} />
           <BookingFeedback feedback={booking.feedback} />
+          {booking.group === 'past' && !booking.feedback && (
+            <div className="bookingExtras">
+              <div className="noFeedback">No feedback given</div>
+              {booking.notes && <Touch label="Booking notes" value={booking.notes} />}
+            </div>
+          )}
         </>
       )}
     </div>
