@@ -821,14 +821,20 @@ function BookingExtras({ booking }) {
  */
 const PRICED_EXTRAS = ['Arrival Hotel Nights', 'Departure Hotel Nights', 'Trip Extension'];
 
+/** Coord Decision states that mean something is still outstanding. */
+const CHASE_DECISIONS = ['Ops to Chase', 'BM to Chase', 'Revisit Next Pod'];
+
 function OpsBanner({ booking }) {
   const ops = booking.ops || {};
   const isUpcoming = booking.group === 'upcoming' || booking.group === 'active';
   if (!isUpcoming) return null;
 
   const extras = ops.extras || [];
-  const hasAnything = ops.paymentPending || ops.daysUntilStart != null || extras.length > 0;
+  const hasAnything = ops.paymentPending || ops.daysUntilStart != null
+    || extras.length > 0 || ops.remainingDetails || ops.coordDecision;
   if (!hasAnything) return null;
+
+  const needsChasing = CHASE_DECISIONS.includes(ops.coordDecision);
 
   // Amber only when something is actually owed. $0 still shows, in neutral —
   // it confirms the booking is settled rather than leaving Ops to wonder.
@@ -844,9 +850,26 @@ function OpsBanner({ booking }) {
       {ops.daysUntilStart != null && (
         <span className="chip opsChip">{ops.daysUntilStart} days to start</span>
       )}
+      {ops.coordDecision && (
+        <span className={`chip opsChip ${needsChasing ? 'opsMoney' : ''}`}>
+          {ops.coordDecision}
+        </span>
+      )}
       {extras.map((extra) => (
         <span className="chip opsChip" key={extra}>{extra}</span>
       ))}
+
+      {/* Full width, because it names what to actually ask the guest for. */}
+      {ops.remainingDetails && (
+        <div className="opsDetails">
+          {ops.remainingDetails}
+          {ops.detailsDueDate && (
+            <span className={ops.detailsOverdue ? 'opsOverdue' : 'opsDue'}>
+              {ops.detailsOverdue ? 'was due' : 'due'} {ops.detailsDueDate}
+            </span>
+          )}
+        </div>
+      )}
     </div>
   );
 }

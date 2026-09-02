@@ -90,6 +90,11 @@ const FIELDS = {
     // Ops banner on upcoming trips.
     paymentPending: 'Payment Pending',   // Formula, currency. 0 when paid or cancelled.
     daysUntilStart: 'Days Until Start',  // Lookup from Trip
+    // What the guest still owes us, e.g. "1 details remaining — Insurance
+    // Details". The single most actionable thing to have in front of a BM
+    // who happens to be on the phone with them.
+    remainingDetails: 'Remaining Details',
+    detailsDueDate: 'Customer Details Due Date',
     // "Extras" itself is a link field and returns record ids, so the lookup of
     // the category is used instead. Extras Cost is a rollup of the whole
     // booking, not per extra.
@@ -690,6 +695,9 @@ function shapeBookings(records, tripMap, coordinatorMap, managerNameById) {
         // formatted currency string back into a value.
         paymentPendingAmount: toNumber(fields[B.paymentPending]),
         daysUntilStart: toNumber(fields[B.daysUntilStart]),
+        remainingDetails: firstValue(fields[B.remainingDetails]),
+        detailsDueDate: formatShortDate(fields[B.detailsDueDate]),
+        detailsOverdue: isPastDate(fields[B.detailsDueDate]),
         // Lookups arrive as arrays.
         extras: unique(asArray(fields[B.extras]).map(firstValue).filter(Boolean)),
         extrasCost: formatCurrency(toNumber(fields[B.extrasCost])),
@@ -769,6 +777,13 @@ function formatCurrency(amount) {
     currency: 'AUD',
     maximumFractionDigits: 0,
   }).format(amount);
+}
+
+/** A deadline that has already passed reads very differently from one that has not. */
+function isPastDate(value) {
+  const date = parseDate(value);
+  if (!date) return false;
+  return date < startOfDay(new Date());
 }
 
 function toNumber(value) {
