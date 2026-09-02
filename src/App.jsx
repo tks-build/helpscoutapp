@@ -15,6 +15,19 @@ import { useEffect, useMemo, useState } from 'react';
 const ACTIVITY_WRITE_ENABLED = false;
 const ACTIVITY_COPY_REPLY_ENABLED = false;
 
+/**
+ * Remaining Details, its due date and the itinerary review notes.
+ *
+ * Off until the upstream formulas are trusted. Two known faults: Arrival
+ * Details? reports "N" whenever the transfer is TBC even with complete flight
+ * data, and the Emergency Contact flag reads as outstanding while the lookups
+ * are populated. Showing either sends a BM to chase a guest who has already
+ * sent what we are asking for.
+ *
+ * The display itself is fine — set this to true once the formulas are fixed.
+ */
+const PENDING_DETAILS_ENABLED = false;
+
 function App() {
   const appRef = useSetAppHeight();
   const [context, setContext] = useState(null);
@@ -855,8 +868,9 @@ function OpsBanner({ booking }) {
   if (!isUpcoming) return null;
 
   const extras = ops.extras || [];
+  const showPending = PENDING_DETAILS_ENABLED && ops.remainingDetails;
   const hasAnything = ops.paymentPending || ops.daysUntilStart != null
-    || extras.length > 0 || ops.remainingDetails || ops.coordDecision;
+    || extras.length > 0 || showPending || ops.coordDecision;
   if (!hasAnything) return null;
 
   const needsChasing = CHASE_DECISIONS.includes(ops.coordDecision);
@@ -888,7 +902,7 @@ function OpsBanner({ booking }) {
           {ops.coordDecision}
         </span>
       )}
-      {underReview && (
+      {PENDING_DETAILS_ENABLED && underReview && (
         <span className={`chip opsChip ${itineraryStatusClass(ops.itineraryStatus)}`}>
           Itinerary: {ops.itineraryStatus}
         </span>
@@ -898,7 +912,7 @@ function OpsBanner({ booking }) {
       ))}
 
       {/* Full width, because it names what to actually ask the guest for. */}
-      {ops.remainingDetails && (
+      {showPending && (
         <div className="opsDetails">
           <div className="opsDetailsHead">
             {ops.remainingDetails.heading || ops.remainingDetails.text}
