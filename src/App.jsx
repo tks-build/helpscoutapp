@@ -839,6 +839,16 @@ function isItineraryUnderReview(status) {
   return Boolean(value) && value !== 'completed';
 }
 
+/** Mirrors the colours on the Airtable single select, so the two match. */
+function itineraryStatusClass(status) {
+  const value = String(status || '').trim().toLowerCase();
+  if (value === 'needs processing') return 'itinNeedsProcessing';
+  if (value === 'processing') return 'itinProcessing';
+  if (value === 'completed') return 'itinCompleted';
+  if (value === 'review') return 'itinReview';
+  return '';
+}
+
 function OpsBanner({ booking }) {
   const ops = booking.ops || {};
   const isUpcoming = booking.group === 'upcoming' || booking.group === 'active';
@@ -873,6 +883,11 @@ function OpsBanner({ booking }) {
           {ops.coordDecision}
         </span>
       )}
+      {underReview && (
+        <span className={`chip opsChip ${itineraryStatusClass(ops.itineraryStatus)}`}>
+          Itinerary: {ops.itineraryStatus}
+        </span>
+      )}
       {extras.map((extra) => (
         <span className="chip opsChip" key={extra}>{extra}</span>
       ))}
@@ -894,11 +909,11 @@ function OpsBanner({ booking }) {
                 const awaitingReview = underReview && FLIGHT_DETAILS.includes(item);
                 return (
                   <span
-                    className={`chip opsDetailChip ${awaitingReview ? 'opsDetailReview' : ''}`}
+                    className={`chip opsDetailChip ${awaitingReview ? itineraryStatusClass(ops.itineraryStatus) : ''}`}
                     key={item}
                   >
                     {item}
-                    {awaitingReview && <span className="opsReviewMark">in review</span>}
+                    {awaitingReview && <span className="opsReviewMark">{ops.itineraryStatus}</span>}
                   </span>
                 );
               })}

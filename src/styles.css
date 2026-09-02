@@ -788,13 +788,36 @@ body {
   font-weight: 600;
 }
 
-/* Outstanding for a different reason: we may hold these already and the
-   extractor has flagged them for a human. Marked so nobody chases the guest. */
-.opsDetailReview {
-  background: var(--trtl-amber-bg);
+/* Itinerary Processing Status, matching the colours on the Airtable single
+   select so the panel and the CRM agree at a glance. Solid rather than dashed:
+   these are outstanding for a different reason, and shouldn't read the same as
+   details the guest genuinely hasn't sent. */
+.itinNeedsProcessing {
+  background: #b45309;
   border-style: solid;
-  border-color: var(--trtl-amber-line);
-  color: var(--trtl-amber);
+  border-color: #b45309;
+  color: #ffffff;
+}
+
+.itinProcessing {
+  background: #e9a319;
+  border-style: solid;
+  border-color: #d99310;
+  color: #3d2a08;
+}
+
+.itinCompleted {
+  background: #1aa34a;
+  border-style: solid;
+  border-color: #1aa34a;
+  color: #ffffff;
+}
+
+.itinReview {
+  background: #cfe8f7;
+  border-style: solid;
+  border-color: #a9d3ec;
+  color: #1b5e8a;
 }
 
 .opsReviewMark {
@@ -804,7 +827,7 @@ body {
 }
 
 .opsReviewNote {
-  color: var(--trtl-amber);
+  color: #1b5e8a;
   font-size: 11px;
   line-height: 1.35;
 }
