@@ -103,6 +103,11 @@ const FIELDS = {
     // nothing; whichever is real wins.
     itineraryStatus: 'Itinerary Processing Status',
     itineraryStatusLower: 'itinerary processing status',
+    // The extractor writes why it stopped here — "No departure flight found in
+    // the itinerary", and so on. Far more useful than a generic warning,
+    // because it says what to actually ask the guest for.
+    arrivalScratchpad: 'OPS- Arrival Scratchpad',
+    departureScratchpad: 'OPS- Departure Scratchpad',
     // "Extras" itself is a link field and returns record ids, so the lookup of
     // the category is used instead. Extras Cost is a rollup of the whole
     // booking, not per extra.
@@ -705,6 +710,8 @@ function shapeBookings(records, tripMap, coordinatorMap, managerNameById) {
         daysUntilStart: toNumber(fields[B.daysUntilStart]),
         remainingDetails: parseRemainingDetails(fields[B.remainingDetails]),
         itineraryStatus: firstValue(fields[B.itineraryStatus]) || firstValue(fields[B.itineraryStatusLower]),
+        arrivalScratchpad: firstValue(fields[B.arrivalScratchpad]),
+        departureScratchpad: firstValue(fields[B.departureScratchpad]),
         detailsDueDate: formatShortDate(fields[B.detailsDueDate]),
         detailsOverdue: isPastDate(fields[B.detailsDueDate]),
         // Lookups arrive as arrays.

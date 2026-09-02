@@ -864,6 +864,11 @@ function OpsBanner({ booking }) {
   const flightItemsPending = (ops.remainingDetails?.items || [])
     .some((item) => FLIGHT_DETAILS.includes(item));
 
+  const scratchpads = [
+    { label: 'Arrival', text: ops.arrivalScratchpad },
+    { label: 'Departure', text: ops.departureScratchpad },
+  ].filter((entry) => entry.text);
+
   // Amber only when something is actually owed. $0 still shows, in neutral —
   // it confirms the booking is settled rather than leaving Ops to wonder.
   const owes = (ops.paymentPendingAmount || 0) > 0;
@@ -920,11 +925,24 @@ function OpsBanner({ booking }) {
             </div>
           )}
 
+          {/* The extractor's own explanation, where it has one. It says what is
+              actually missing — often that the guest never sent a return
+              flight, which is the opposite of "we already have it". The generic
+              line is only a fallback. */}
           {underReview && flightItemsPending && (
-            <div className="opsReviewNote">
-              Itinerary status is “{ops.itineraryStatus}” — flight details may already
-              be received and awaiting review. Check before chasing the guest.
-            </div>
+            scratchpads.length > 0 ? (
+              scratchpads.map(({ label, text }) => (
+                <div className="opsReviewNote" key={label}>
+                  <span className="opsReviewLabel">{label}</span>
+                  {text}
+                </div>
+              ))
+            ) : (
+              <div className="opsReviewNote">
+                Itinerary status is “{ops.itineraryStatus}” — check the booking before
+                chasing the guest.
+              </div>
+            )
           )}
         </div>
       )}

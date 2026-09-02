@@ -827,9 +827,22 @@ body {
 }
 
 .opsReviewNote {
+  background: #eff7fc;
+  border-left: 2px solid #a9d3ec;
+  border-radius: 0 var(--trtl-radius-sm) var(--trtl-radius-sm) 0;
   color: #1b5e8a;
   font-size: 11px;
-  line-height: 1.35;
+  line-height: 1.4;
+  padding: 5px 8px;
+}
+
+.opsReviewLabel {
+  display: block;
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 0.07em;
+  opacity: 0.75;
+  text-transform: uppercase;
 }
 
 .opsDue {
