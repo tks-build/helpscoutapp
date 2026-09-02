@@ -95,6 +95,14 @@ const FIELDS = {
     // who happens to be on the phone with them.
     remainingDetails: 'Remaining Details',
     detailsDueDate: 'Customer Details Due Date',
+    // Set by the flight extractor. "Review" means a human needs to look at the
+    // itinerary — a missing flight number, a missing date, one leg absent. It
+    // does NOT mean the guest has not sent anything, so arrival and departure
+    // can show as outstanding when we already hold them.
+    // Both casings are read because a field that does not exist simply returns
+    // nothing; whichever is real wins.
+    itineraryStatus: 'Itinerary Processing Status',
+    itineraryStatusLower: 'itinerary processing status',
     // "Extras" itself is a link field and returns record ids, so the lookup of
     // the category is used instead. Extras Cost is a rollup of the whole
     // booking, not per extra.
@@ -695,7 +703,8 @@ function shapeBookings(records, tripMap, coordinatorMap, managerNameById) {
         // formatted currency string back into a value.
         paymentPendingAmount: toNumber(fields[B.paymentPending]),
         daysUntilStart: toNumber(fields[B.daysUntilStart]),
-        remainingDetails: firstValue(fields[B.remainingDetails]),
+        remainingDetails: parseRemainingDetails(fields[B.remainingDetails]),
+        itineraryStatus: firstValue(fields[B.itineraryStatus]) || firstValue(fields[B.itineraryStatusLower]),
         detailsDueDate: formatShortDate(fields[B.detailsDueDate]),
         detailsOverdue: isPastDate(fields[B.detailsDueDate]),
         // Lookups arrive as arrays.
@@ -777,6 +786,32 @@ function formatCurrency(amount) {
     currency: 'AUD',
     maximumFractionDigits: 0,
   }).format(amount);
+}
+
+/**
+ * Splits "3 details remaining — Arrival Details, Departure Details, Insurance
+ * Details" into a heading and its parts, so the panel can list them instead of
+ * running six items together on one line.
+ *
+ * The trailing "Details" is stripped from each item — the heading already says
+ * it, and repeating it six times is most of the width for none of the meaning.
+ * Falls back to the raw string if the format ever changes.
+ */
+function parseRemainingDetails(value) {
+  const text = firstValue(value);
+  if (!text) return null;
+
+  const [heading, list] = text.split(/\s[—–-]\s/);
+  const items = (list || '')
+    .split(',')
+    .map((item) => item.trim().replace(/\s+Details$/i, ''))
+    .filter(Boolean);
+
+  return {
+    text,
+    heading: (heading || '').trim(),
+    items,
+  };
 }
 
 /** A deadline that has already passed reads very differently from one that has not. */

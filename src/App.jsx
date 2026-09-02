@@ -824,6 +824,21 @@ const PRICED_EXTRAS = ['Arrival Hotel Nights', 'Departure Hotel Nights', 'Trip E
 /** Coord Decision states that mean something is still outstanding. */
 const CHASE_DECISIONS = ['Ops to Chase', 'BM to Chase', 'Revisit Next Pod'];
 
+/**
+ * Details the flight extractor is responsible for.
+ *
+ * These can show as outstanding while the itinerary sits at "Review" — a
+ * missing flight number, an absent leg, anything needing human eyes. The guest
+ * may well have sent everything. Chasing them for it is the failure this
+ * guards against.
+ */
+const FLIGHT_DETAILS = ['Arrival', 'Departure'];
+
+function isItineraryUnderReview(status) {
+  const value = String(status || '').trim().toLowerCase();
+  return Boolean(value) && value !== 'completed';
+}
+
 function OpsBanner({ booking }) {
   const ops = booking.ops || {};
   const isUpcoming = booking.group === 'upcoming' || booking.group === 'active';
@@ -835,6 +850,9 @@ function OpsBanner({ booking }) {
   if (!hasAnything) return null;
 
   const needsChasing = CHASE_DECISIONS.includes(ops.coordDecision);
+  const underReview = isItineraryUnderReview(ops.itineraryStatus);
+  const flightItemsPending = (ops.remainingDetails?.items || [])
+    .some((item) => FLIGHT_DETAILS.includes(item));
 
   // Amber only when something is actually owed. $0 still shows, in neutral —
   // it confirms the booking is settled rather than leaving Ops to wonder.
@@ -862,11 +880,36 @@ function OpsBanner({ booking }) {
       {/* Full width, because it names what to actually ask the guest for. */}
       {ops.remainingDetails && (
         <div className="opsDetails">
-          {ops.remainingDetails}
-          {ops.detailsDueDate && (
-            <span className={ops.detailsOverdue ? 'opsOverdue' : 'opsDue'}>
-              {ops.detailsOverdue ? 'was due' : 'due'} {ops.detailsDueDate}
-            </span>
+          <div className="opsDetailsHead">
+            {ops.remainingDetails.heading || ops.remainingDetails.text}
+            {ops.detailsDueDate && (
+              <span className={ops.detailsOverdue ? 'opsOverdue' : 'opsDue'}>
+                {ops.detailsOverdue ? 'was due' : 'due'} {ops.detailsDueDate}
+              </span>
+            )}
+          </div>
+          {ops.remainingDetails.items?.length > 0 && (
+            <div className="opsDetailsList">
+              {ops.remainingDetails.items.map((item) => {
+                const awaitingReview = underReview && FLIGHT_DETAILS.includes(item);
+                return (
+                  <span
+                    className={`chip opsDetailChip ${awaitingReview ? 'opsDetailReview' : ''}`}
+                    key={item}
+                  >
+                    {item}
+                    {awaitingReview && <span className="opsReviewMark">in review</span>}
+                  </span>
+                );
+              })}
+            </div>
+          )}
+
+          {underReview && flightItemsPending && (
+            <div className="opsReviewNote">
+              Itinerary status is “{ops.itineraryStatus}” — flight details may already
+              be received and awaiting review. Check before chasing the guest.
+            </div>
           )}
         </div>
       )}

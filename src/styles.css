@@ -760,10 +760,53 @@ body {
 /* Takes the full width of the banner rather than sitting as another chip —
    this is the line that tells a BM what to actually ask the guest for. */
 .opsDetails {
+  display: grid;
   flex-basis: 100%;
-  font-size: 11.5px;
-  font-weight: 600;
+  gap: 5px;
+  margin-top: 2px;
+}
+
+.opsDetailsHead {
   color: var(--trtl-ink-2);
+  font-size: 11.5px;
+  font-weight: 700;
+}
+
+.opsDetailsList {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+/* Outlined rather than filled, so the outstanding items read as a checklist
+   rather than competing with the status chips above them. */
+.opsDetailChip {
+  background: transparent;
+  border: 1px dashed var(--trtl-line);
+  color: var(--trtl-ink-2);
+  font-size: 10.5px;
+  font-weight: 600;
+}
+
+/* Outstanding for a different reason: we may hold these already and the
+   extractor has flagged them for a human. Marked so nobody chases the guest. */
+.opsDetailReview {
+  background: var(--trtl-amber-bg);
+  border-style: solid;
+  border-color: var(--trtl-amber-line);
+  color: var(--trtl-amber);
+}
+
+.opsReviewMark {
+  font-weight: 400;
+  margin-left: 4px;
+  opacity: 0.85;
+}
+
+.opsReviewNote {
+  color: var(--trtl-amber);
+  font-size: 11px;
+  line-height: 1.35;
 }
 
 .opsDue {
