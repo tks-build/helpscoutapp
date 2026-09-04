@@ -1,6 +1,6 @@
 import HelpScout from '@helpscout/javascript-sdk';
 import { DefaultStyle, Heading, Spinner, Text, useSetAppHeight } from '@helpscout/ui-kit';
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 
 /**
  * Activity log rollout flags.
@@ -176,6 +176,11 @@ function ProfilePanel({ profile, showEmail, context }) {
 
       <TripsSection bookings={bookings} />
       <LeadsTable leads={leads} />
+
+      <MailvioSubscriptions
+        email={customer?.matchedEmail || fields['Client Email']}
+        context={context}
+      />
 
       <ActivityLog
         customerId={customer?.id}
@@ -397,6 +402,187 @@ function CollapsibleGroup({ title, count, defaultOpen = false, children }) {
       </button>
       {open && children}
     </div>
+  );
+}
+
+/**
+ * Mailvio subscriptions.
+ *
+ * Replaces the ActiveCampaign subscribe/unsubscribe Slack commands. Every call
+ * goes through /api/mailvio so the key stays server-side.
+ *
+ * Collapsed by default and loaded on open: most conversations have nothing to
+ * do with mailing lists, and it saves three Mailvio calls per panel load.
+ */
+function MailvioSubscriptions({ email, context }) {
+  const [open, setOpen] = useState(false);
+  const [state, setState] = useState({ status: 'idle', groups: [], exists: false });
+  const [busyGroupId, setBusyGroupId] = useState(null);
+  const [confirmingId, setConfirmingId] = useState(null);
+  const [error, setError] = useState('');
+
+  const mailboxId = context?.conversation?.mailboxId;
+  const customer = context?.customer;
+
+  const load = useCallback(async () => {
+    if (!email) return;
+    setState((current) => ({ ...current, status: 'loading' }));
+    setError('');
+
+    try {
+      const params = new URLSearchParams({ email });
+      if (mailboxId) params.set('mailboxId', String(mailboxId));
+
+      const response = await fetch(`/api/mailvio?${params}`);
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload.details || payload.error || 'Failed');
+
+      setState({ status: 'ready', groups: payload.groups || [], exists: payload.subscriberExists });
+    } catch (err) {
+      setState((current) => ({ ...current, status: 'error' }));
+      setError(err.message);
+    }
+  }, [email, mailboxId]);
+
+  useEffect(() => {
+    if (open) load();
+  }, [open, load]);
+
+  async function mutate(group, method) {
+    // One request at a time per group, so a double click cannot fire twice.
+    if (busyGroupId) return;
+    setBusyGroupId(group.id);
+    setConfirmingId(null);
+    setError('');
+
+    try {
+      const response = await fetch('/api/mailvio', {
+        method,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email,
+          groupId: group.id,
+          mailboxId,
+          firstName: customer?.firstName,
+          lastName: customer?.lastName,
+        }),
+      });
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload.details || payload.error || 'Failed');
+
+      // Refetch rather than patching local state — Mailvio is authoritative,
+      // and a failed write must not leave the panel showing a change.
+      await load();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setBusyGroupId(null);
+    }
+  }
+
+  if (!email) {
+    return (
+      <section className="activitySection">
+        <span className="groupTitle">Mailvio subscriptions</span>
+        <div className="noFeedback">No email address on this conversation.</div>
+      </section>
+    );
+  }
+
+  const subscribedCount = state.groups.filter((group) => group.subscribed).length;
+
+  return (
+    <section className="activitySection">
+      <div className="activityHeader">
+        <button className="activityToggle" onClick={() => setOpen(!open)} type="button">
+          <span className="activityChevron">{open ? '▲' : '▼'}</span>
+          Mailvio subscriptions
+          {open && state.status === 'ready' && (
+            <span className="activityCount">{subscribedCount}</span>
+          )}
+        </button>
+        {open && (
+          <button className="chevronButton activityCopyButton" onClick={load} type="button">
+            Refresh
+          </button>
+        )}
+      </div>
+
+      {open && (
+        <>
+          {state.status === 'loading' && <div className="noFeedback">Loading…</div>}
+
+          {state.status === 'error' && (
+            <div className="activityStatus">
+              {error || 'Could not reach Mailvio.'}
+            </div>
+          )}
+
+          {state.status === 'ready' && state.groups.length === 0 && (
+            <div className="noFeedback">No groups found in Mailvio.</div>
+          )}
+
+          {state.status === 'ready' && state.groups.length > 0 && (
+            <>
+              {!state.exists && (
+                <div className="noFeedback">Not yet in Mailvio — adding to a group will create them.</div>
+              )}
+              {error && <div className="activityStatus">{error}</div>}
+
+              <div className="mailvioList">
+                {state.groups.map((group) => (
+                  <div className="mailvioRow" key={group.id}>
+                    <span className={`mailvioTick ${group.subscribed ? 'on' : ''}`}>
+                      {group.subscribed ? '✓' : ''}
+                    </span>
+                    <span className="mailvioName">{group.name}</span>
+
+                    {confirmingId === group.id ? (
+                      <span className="mailvioConfirm">
+                        <button
+                          className="chevronButton mailvioAction danger"
+                          disabled={busyGroupId === group.id}
+                          onClick={() => mutate(group, 'DELETE')}
+                          type="button"
+                        >
+                          Confirm
+                        </button>
+                        <button
+                          className="chevronButton mailvioAction"
+                          onClick={() => setConfirmingId(null)}
+                          type="button"
+                        >
+                          Cancel
+                        </button>
+                      </span>
+                    ) : (
+                      <button
+                        className="chevronButton mailvioAction"
+                        disabled={Boolean(busyGroupId)}
+                        onClick={() => (group.subscribed
+                          ? setConfirmingId(group.id)
+                          : mutate(group, 'POST'))}
+                        type="button"
+                      >
+                        {busyGroupId === group.id ? '…' : group.subscribed ? 'Remove' : 'Add'}
+                      </button>
+                    )}
+                  </div>
+                ))}
+              </div>
+
+              {confirmingId && (
+                <div className="noFeedback">
+                  Remove {email} from{' '}
+                  {state.groups.find((group) => group.id === confirmingId)?.name}? This only affects
+                  that group.
+                </div>
+              )}
+            </>
+          )}
+        </>
+      )}
+    </section>
   );
 }
 
