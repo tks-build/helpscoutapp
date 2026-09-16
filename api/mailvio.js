@@ -67,17 +67,35 @@ async function listSubscriptions(req, res, apiKey) {
   }
 
   const memberships = await fetchSubscriberGroups(apiKey, subscriber.id);
-  const memberOf = new Set(memberships.map((group) => String(group.id)));
+  const identities = memberships.map(groupIdentity);
 
-  return sendJson(res, 200, {
+  // Matched on id, falling back to name. If Mailvio ever returns ids in a
+  // shape we don't recognise, the names still line up and the panel stays
+  // correct rather than quietly showing everyone as unsubscribed.
+  const memberIds = new Set(identities.map((item) => item.id).filter(Boolean));
+  const memberNames = new Set(
+    identities.map((item) => item.name?.trim().toLowerCase()).filter(Boolean),
+  );
+
+  const body = {
     subscriberExists: true,
     subscriberId: subscriber.id,
     groups: groups.map((group) => ({
       id: group.id,
       name: group.name,
-      subscribed: memberOf.has(String(group.id)),
+      subscribed: memberIds.has(String(group.id))
+        || memberNames.has(String(group.name).trim().toLowerCase()),
     })),
-  });
+  };
+
+  // ?debug=1 returns the raw membership payload so the actual shape can be
+  // read off rather than guessed at. No key, no other contacts — just this
+  // subscriber's groups.
+  if (req.query.debug) {
+    body.debug = { rawMemberships: memberships, parsed: identities };
+  }
+
+  return sendJson(res, 200, body);
 }
 
 async function addToGroup(req, res, apiKey) {
@@ -154,7 +172,32 @@ async function findSubscriber(apiKey, email) {
 async function fetchSubscriberGroups(apiKey, subscriberId) {
   const payload = await mailvio(apiKey, `/subscriber/${encodeURIComponent(subscriberId)}`);
   const subscriber = payload?.Subscriber || payload?.subscriber || payload;
-  return subscriber?.Groups || subscriber?.groups || [];
+  const raw = subscriber?.Groups || subscriber?.groups || subscriber?.GroupList || [];
+  return Array.isArray(raw) ? raw : [raw];
+}
+
+/**
+ * Pulls an id and a name out of a group entry, whatever shape it arrives in.
+ *
+ * Mailvio's docs don't pin this down, and the first implementation assumed
+ * `{ id }` — which silently produced "member of nothing" for people who were
+ * plainly subscribed. Handles bare ids, `groupId`, and a nested Group object.
+ */
+function groupIdentity(entry) {
+  if (entry === null || entry === undefined) return {};
+
+  if (typeof entry === 'number' || typeof entry === 'string') {
+    return { id: String(entry) };
+  }
+
+  const source = entry.Group || entry.group || entry;
+  const id = source.id ?? source.groupId ?? source.GroupId ?? source.group_id;
+  const name = source.groupName || source.name || source.GroupName;
+
+  return {
+    id: id === undefined || id === null ? undefined : String(id),
+    name: name ? String(name) : undefined,
+  };
 }
 
 /** Group ids from the browser are never trusted — they must exist in the account. */
