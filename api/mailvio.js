@@ -68,8 +68,14 @@ async function listSubscriptions(req, res, apiKey) {
 
   const knownIds = new Set(groups.map((group) => String(group.id)));
   const detail = await fetchSubscriberDetail(apiKey, subscriber.id);
-  const memberships = findMembershipArrays(detail, knownIds);
-  const identities = memberships.map(groupIdentity);
+
+  // Mailvio returns memberships as GroupSubscribers join rows. The scan is
+  // kept as a fallback in case that changes.
+  const memberships = Array.isArray(detail.GroupSubscribers) && detail.GroupSubscribers.length
+    ? detail.GroupSubscribers
+    : findMembershipArrays(detail, knownIds);
+
+  const identities = memberships.map(groupIdentity).filter((item) => item.active !== false);
 
   // Matched on id, falling back to name. If Mailvio ever returns ids in a
   // shape we don't recognise, the names still line up and the panel stays
@@ -221,7 +227,7 @@ function looksLikeGroups(array, knownIds) {
 
     const source = entry.Group || entry.group || entry;
     const hasName = Boolean(source.groupName || source.GroupName);
-    const id = source.id ?? source.groupId ?? source.GroupId ?? source.group_id;
+    const id = source.GroupId ?? source.groupId ?? source.group_id ?? source.id;
     return hasName || (id !== undefined && knownIds.has(String(id)));
   });
 }
@@ -237,16 +243,25 @@ function groupIdentity(entry) {
   if (entry === null || entry === undefined) return {};
 
   if (typeof entry === 'number' || typeof entry === 'string') {
-    return { id: String(entry) };
+    return { id: String(entry), active: true };
   }
 
   const source = entry.Group || entry.group || entry;
-  const id = source.id ?? source.groupId ?? source.GroupId ?? source.group_id;
-  const name = source.groupName || source.name || source.GroupName;
+
+  // GroupId before id, deliberately. A GroupSubscribers row carries its own
+  // `id` for the join record, which is not a group id — reading that first is
+  // what made a subscribed contact look like a member of nothing.
+  const id = source.GroupId ?? source.groupId ?? source.group_id ?? source.id;
+  const name = source.groupName || source.GroupName || source.name;
+
+  // A row can outlive the membership: Mailvio keeps it and flags it. Presence
+  // in the array is not the same as being subscribed.
+  const active = entry.unsubscribe === true ? false : entry.active !== false;
 
   return {
     id: id === undefined || id === null ? undefined : String(id),
     name: name ? String(name) : undefined,
+    active,
   };
 }
 
