@@ -66,7 +66,9 @@ async function listSubscriptions(req, res, apiKey) {
     });
   }
 
-  const memberships = await fetchSubscriberGroups(apiKey, subscriber.id);
+  const knownIds = new Set(groups.map((group) => String(group.id)));
+  const detail = await fetchSubscriberDetail(apiKey, subscriber.id);
+  const memberships = findMembershipArrays(detail, knownIds);
   const identities = memberships.map(groupIdentity);
 
   // Matched on id, falling back to name. If Mailvio ever returns ids in a
@@ -92,7 +94,13 @@ async function listSubscriptions(req, res, apiKey) {
   // read off rather than guessed at. No key, no other contacts — just this
   // subscriber's groups.
   if (req.query.debug) {
-    body.debug = { rawMemberships: memberships, parsed: identities };
+    body.debug = {
+      rawMemberships: memberships,
+      parsed: identities,
+      // Field names only, not values — enough to see where Mailvio puts the
+      // memberships without moving the contact's personal details around.
+      detailShape: describeShape(detail),
+    };
   }
 
   return sendJson(res, 200, body);
@@ -169,11 +177,53 @@ async function findSubscriber(apiKey, email) {
   return match || null;
 }
 
-async function fetchSubscriberGroups(apiKey, subscriberId) {
+async function fetchSubscriberDetail(apiKey, subscriberId) {
   const payload = await mailvio(apiKey, `/subscriber/${encodeURIComponent(subscriberId)}`);
-  const subscriber = payload?.Subscriber || payload?.subscriber || payload;
-  const raw = subscriber?.Groups || subscriber?.groups || subscriber?.GroupList || [];
-  return Array.isArray(raw) ? raw : [raw];
+  return payload?.Subscriber || payload?.subscriber || payload || {};
+}
+
+/**
+ * Finds the group memberships anywhere in a subscriber payload.
+ *
+ * The documented `Subscriber.Groups` came back empty for a contact who is
+ * demonstrably in a group, so rather than keep guessing key names this walks
+ * the object and picks out any array that looks like a list of groups: either
+ * objects carrying a group name or id, or bare ids matching the account's
+ * known groups.
+ */
+function findMembershipArrays(node, knownIds, depth = 0) {
+  if (!node || typeof node !== 'object' || depth > 4) return [];
+
+  const found = [];
+
+  for (const value of Object.values(node)) {
+    if (Array.isArray(value)) {
+      if (value.length && looksLikeGroups(value, knownIds)) found.push(...value);
+      // Arrays of objects may still contain the groups further down.
+      for (const entry of value) found.push(...findMembershipArrays(entry, knownIds, depth + 1));
+    } else if (value && typeof value === 'object') {
+      found.push(...findMembershipArrays(value, knownIds, depth + 1));
+    }
+  }
+
+  return found;
+}
+
+function looksLikeGroups(array, knownIds) {
+  return array.some((entry) => {
+    if (entry === null || entry === undefined) return false;
+
+    if (typeof entry === 'number' || typeof entry === 'string') {
+      return knownIds.has(String(entry));
+    }
+
+    if (typeof entry !== 'object') return false;
+
+    const source = entry.Group || entry.group || entry;
+    const hasName = Boolean(source.groupName || source.GroupName);
+    const id = source.id ?? source.groupId ?? source.GroupId ?? source.group_id;
+    return hasName || (id !== undefined && knownIds.has(String(id)));
+  });
 }
 
 /**
@@ -234,6 +284,26 @@ async function mailvio(apiKey, path, options = {}) {
   } finally {
     clearTimeout(timer);
   }
+}
+
+/**
+ * A map of field names to their types, without any values. Used by ?debug=1 so
+ * an unexpected response shape can be read off without sending a contact's
+ * personal details back through the browser.
+ */
+function describeShape(node, depth = 0) {
+  if (node === null || node === undefined) return 'empty';
+  if (Array.isArray(node)) {
+    return depth > 3
+      ? `array(${node.length})`
+      : { array: node.length, sample: node.length ? describeShape(node[0], depth + 1) : 'empty' };
+  }
+  if (typeof node !== 'object') return typeof node;
+  if (depth > 3) return 'object';
+
+  return Object.fromEntries(
+    Object.entries(node).map(([key, value]) => [key, describeShape(value, depth + 1)]),
+  );
 }
 
 /* ---------------------------------------------------------------- helpers */
