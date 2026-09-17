@@ -1074,6 +1074,18 @@ body {
   gap: 4px;
 }
 
+/* Deleting a subscriber is not the same as unsubscribing them from a list.
+   Red, because it is the one irreversible action in this panel. */
+.mailvioWarning {
+  background: var(--trtl-red-bg);
+  border: 1px solid var(--trtl-red-line);
+  border-radius: var(--trtl-radius-sm);
+  color: var(--trtl-red);
+  font-size: 11.5px;
+  line-height: 1.4;
+  padding: 6px 8px;
+}
+
 /* ----------------------------------------------------------- activity log */
 
 .activitySection {

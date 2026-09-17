@@ -129,10 +129,14 @@ async function removeFromGroup(req, res, apiKey) {
   if (!email || !isEmail(email)) return sendJson(res, 400, { error: 'A valid email is required' });
   if (!(await isKnownGroup(apiKey, groupId))) return sendJson(res, 400, { error: 'Unknown group' });
 
+  // 404 is treated as success. Removal is idempotent — "they are not in this
+  // group" is the desired end state either way, and Mailvio returns 404 when
+  // the membership (or the subscriber record) has already gone, which happens
+  // when this was their only group.
   await mailvio(apiKey, `/group/${encodeURIComponent(groupId)}/subscriber`, {
     method: 'DELETE',
     body: JSON.stringify({ emailAddresses: [email] }),
-  });
+  }, { allowMissing: true });
 
   return sendJson(res, 200, { ok: true });
 }
@@ -257,7 +261,7 @@ async function isKnownGroup(apiKey, groupId) {
   return groups.some((group) => String(group.id) === String(groupId));
 }
 
-async function mailvio(apiKey, path, options = {}) {
+async function mailvio(apiKey, path, options = {}, { allowMissing = false } = {}) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
 
@@ -273,6 +277,8 @@ async function mailvio(apiKey, path, options = {}) {
     });
 
     const text = await response.text();
+
+    if (response.status === 404 && allowMissing) return {};
 
     if (!response.ok) {
       // Status only. The body can contain the request we sent, including the

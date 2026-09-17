@@ -572,11 +572,22 @@ function MailvioSubscriptions({ email, context }) {
               </div>
 
               {confirmingId && (
-                <div className="noFeedback">
-                  Remove {email} from{' '}
-                  {state.groups.find((group) => group.id === confirmingId)?.name}? This only affects
-                  that group.
-                </div>
+                subscribedCount <= 1 ? (
+                  /* Mailvio deletes the subscriber outright when their last
+                     group membership is removed, taking tags and history with
+                     it. That is not what "remove from group" implies, so it
+                     has to be said plainly before the click. */
+                  <div className="mailvioWarning">
+                    <strong>This is their only group.</strong> Removing it deletes {email} from
+                    Mailvio entirely, including their tags and history. That cannot be undone.
+                  </div>
+                ) : (
+                  <div className="noFeedback">
+                    Remove {email} from{' '}
+                    {state.groups.find((group) => group.id === confirmingId)?.name}? They stay
+                    subscribed to their other {subscribedCount - 1 === 1 ? 'group' : 'groups'}.
+                  </div>
+                )
               )}
             </>
           )}
