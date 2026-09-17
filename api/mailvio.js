@@ -85,7 +85,7 @@ async function listSubscriptions(req, res, apiKey) {
     identities.map((item) => item.name?.trim().toLowerCase()).filter(Boolean),
   );
 
-  const body = {
+  return sendJson(res, 200, {
     subscriberExists: true,
     subscriberId: subscriber.id,
     groups: groups.map((group) => ({
@@ -94,22 +94,7 @@ async function listSubscriptions(req, res, apiKey) {
       subscribed: memberIds.has(String(group.id))
         || memberNames.has(String(group.name).trim().toLowerCase()),
     })),
-  };
-
-  // ?debug=1 returns the raw membership payload so the actual shape can be
-  // read off rather than guessed at. No key, no other contacts — just this
-  // subscriber's groups.
-  if (req.query.debug) {
-    body.debug = {
-      rawMemberships: memberships,
-      parsed: identities,
-      // Field names only, not values — enough to see where Mailvio puts the
-      // memberships without moving the contact's personal details around.
-      detailShape: describeShape(detail),
-    };
-  }
-
-  return sendJson(res, 200, body);
+  });
 }
 
 async function addToGroup(req, res, apiKey) {
@@ -299,26 +284,6 @@ async function mailvio(apiKey, path, options = {}) {
   } finally {
     clearTimeout(timer);
   }
-}
-
-/**
- * A map of field names to their types, without any values. Used by ?debug=1 so
- * an unexpected response shape can be read off without sending a contact's
- * personal details back through the browser.
- */
-function describeShape(node, depth = 0) {
-  if (node === null || node === undefined) return 'empty';
-  if (Array.isArray(node)) {
-    return depth > 3
-      ? `array(${node.length})`
-      : { array: node.length, sample: node.length ? describeShape(node[0], depth + 1) : 'empty' };
-  }
-  if (typeof node !== 'object') return typeof node;
-  if (depth > 3) return 'object';
-
-  return Object.fromEntries(
-    Object.entries(node).map(([key, value]) => [key, describeShape(value, depth + 1)]),
-  );
 }
 
 /* ---------------------------------------------------------------- helpers */
