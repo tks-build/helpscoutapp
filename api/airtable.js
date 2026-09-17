@@ -1,6 +1,4 @@
 import Airtable from 'airtable';
-import { parsePhoneNumberFromString } from 'libphonenumber-js';
-import { timezones } from 'libphonenumber-geo-carrier';
 
 const {
   AIRTABLE_API_KEY,
@@ -467,7 +465,7 @@ async function shapeProfile(base, customer, email, mailboxId) {
       // whose records have no state. Always a guess: mobile numbers are
       // portable, so this says where the number was issued, not where they
       // live. The panel labels it accordingly.
-      phoneTimezone: await timezoneFromPhone(fields[C.phone]),
+      phoneTimezone: timezoneFromPhone(fields[C.phone]),
       frequentTravelFriends: resolveTravelFriends(fields[C.frequentTravelFriends], travelFriends),
       // Multi-select arrives as an array; keep it as one so the UI can chip it.
       traits: asArray(fields[C.traits]).map(firstValue).filter(Boolean),
@@ -829,27 +827,112 @@ function parseRemainingDetails(value) {
 }
 
 /**
- * Timezone from a phone number, using Google's libphonenumber data.
+ * North American area code -> timezone.
  *
- * Kept server-side: the timezone dataset is large and has no business being
- * in the panel bundle. Returns '' for anything unparseable rather than
- * guessing — a wrong time is worse than no time.
+ * Written out rather than pulled from a library: adding libphonenumber meant a
+ * peer-dependency conflict that broke the Vercel build twice, and this data
+ * barely changes. Area codes are reassigned to new regions almost never.
+ *
+ * Only unambiguous codes are listed. Ones that genuinely straddle two zones —
+ * 812 in Indiana, 906 in Michigan, 308 in Nebraska, 701, 605, 208, 867 in
+ * northern Canada — are deliberately absent, so those guests get no clock
+ * rather than a coin-flip. Arizona and Saskatchewan have their own zones
+ * because they do not observe daylight saving.
  */
-async function timezoneFromPhone(value) {
-  const raw = firstValue(value).trim();
-  if (!raw) return '';
+const AREA_CODE_ZONES = flattenZoneGroups({
+  'America/New_York': [
+    '203', '475', '860', '959', '302', '202', '207', '401', '802',
+    '305', '321', '352', '386', '407', '561', '689', '727', '754', '772', '786', '813', '863', '904', '941', '954',
+    '229', '404', '470', '478', '678', '706', '762', '770', '912', '943',
+    '219', '260', '317', '463', '574', '765',
+    '502', '606', '859',
+    '240', '301', '410', '443', '667',
+    '339', '351', '413', '508', '617', '774', '781', '857', '978',
+    '231', '248', '269', '313', '517', '586', '616', '679', '734', '810', '947', '989',
+    '603',
+    '201', '551', '609', '640', '732', '848', '856', '862', '908', '973',
+    '212', '315', '332', '347', '516', '518', '585', '607', '631', '646', '680', '716', '718', '838', '845', '914', '917', '929', '934',
+    '252', '336', '704', '743', '828', '910', '919', '980', '984',
+    '216', '220', '234', '326', '330', '380', '419', '440', '513', '567', '614', '740', '937',
+    '215', '223', '267', '272', '412', '445', '484', '570', '582', '610', '717', '724', '814', '835', '878',
+    '803', '843', '854', '864',
+    '423', '865',
+    '276', '434', '540', '571', '703', '757', '804',
+    '304', '681',
+  ],
+  'America/Chicago': [
+    '205', '251', '256', '334', '659', '938',
+    '327', '479', '501', '870',
+    '217', '224', '309', '312', '331', '447', '464', '618', '630', '708', '773', '779', '815', '847', '872',
+    '319', '515', '563', '641', '712',
+    '316', '620', '785', '913',
+    '225', '318', '337', '504', '985',
+    '218', '320', '507', '612', '651', '763', '952',
+    '228', '601', '662', '769',
+    '314', '417', '557', '573', '636', '660', '816',
+    '402', '531',
+    '405', '539', '572', '580', '918',
+    '615', '629', '731', '901', '931',
+    '210', '214', '254', '281', '325', '346', '361', '409', '430', '432', '469', '512', '682', '713', '726', '737', '806', '817', '830', '832', '903', '936', '940', '956', '972', '979',
+    '262', '414', '534', '608', '715', '920',
+  ],
+  'America/Denver': [
+    '303', '719', '720', '970',
+    '406',
+    '505', '575',
+    '385', '435', '801',
+    '307',
+    '915',
+  ],
+  'America/Phoenix': ['480', '520', '602', '623', '928'],
+  'America/Los_Angeles': [
+    '209', '213', '279', '310', '323', '341', '350', '408', '415', '424', '442', '510', '530', '559', '562', '619', '626', '628', '650', '657', '661', '669', '707', '714', '747', '760', '805', '818', '820', '831', '840', '858', '909', '916', '925', '949', '951',
+    '702', '725', '775',
+    '458', '503', '541', '971',
+    '206', '253', '360', '425', '509', '564',
+  ],
+  'America/Anchorage': ['907'],
+  'Pacific/Honolulu': ['808'],
+  // Canada
+  'America/Toronto': [
+    '226', '249', '289', '343', '365', '382', '416', '437', '519', '548', '613', '647', '683', '705', '742', '753', '905', '942',
+    '367', '418', '438', '450', '468', '514', '579', '581', '819', '873',
+  ],
+  'America/Halifax': ['506', '782', '902'],
+  'America/St_Johns': ['709'],
+  'America/Winnipeg': ['204', '431'],
+  'America/Regina': ['306', '639'],
+  'America/Edmonton': ['368', '403', '587', '780', '825'],
+  'America/Vancouver': ['236', '250', '604', '672', '778'],
+});
 
-  try {
-    const parsed = parsePhoneNumberFromString(raw);
-    if (!parsed || !parsed.isValid()) return '';
-
-    const zones = await timezones(parsed);
-    // Some prefixes map to several zones. The first is Google's best guess and
-    // this is already flagged as approximate in the UI.
-    return Array.isArray(zones) && zones.length ? zones[0] : '';
-  } catch {
-    return '';
+function flattenZoneGroups(groups) {
+  const lookup = {};
+  for (const [zone, codes] of Object.entries(groups)) {
+    for (const code of codes) lookup[code] = zone;
   }
+  return lookup;
+}
+
+/**
+ * Timezone from a North American phone number.
+ *
+ * Only applies to +1 numbers — everywhere else, the dialling code says nothing
+ * useful about the time. Returns '' when the code is unknown or ambiguous: a
+ * wrong time is worse than no time, and the panel hides the clock instead.
+ */
+function timezoneFromPhone(value) {
+  const digits = firstValue(value).replace(/\D/g, '');
+  if (!digits) return '';
+
+  // +1 555 123 4567 arrives as 15551234567; a bare 10-digit number is assumed
+  // North American too, since that is the only place they are stored that way.
+  let areaCode = '';
+  if (digits.length === 11 && digits.startsWith('1')) areaCode = digits.slice(1, 4);
+  else if (digits.length === 10) areaCode = digits.slice(0, 3);
+  else return '';
+
+  return AREA_CODE_ZONES[areaCode] || '';
 }
 
 /** A deadline that has already passed reads very differently from one that has not. */
