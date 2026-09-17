@@ -333,7 +333,12 @@ function ContactCard({ customer }) {
       )}
       <div className="infoGrid contactGrid">
         <PhoneRow value={phone} />
-        <LocalTime state={p.state} country={p.country} timezone={p.timezone} />
+        <LocalTime
+          state={p.state}
+          country={p.country}
+          timezone={p.timezone}
+          phoneTimezone={p.phoneTimezone}
+        />
         {crmUrl(customer) && (
           <a className="iconButton crmInlineButton" href={crmUrl(customer)} rel="noreferrer" target="_blank" title="Open customer in CRM">
             <span aria-hidden="true">&rarr;</span>
@@ -1325,11 +1330,11 @@ function isValidZone(zone) {
   }
 }
 
-function resolveTimeZone(state, country, explicitZone) {
+function resolveTimeZone(state, country, explicitZone, phoneZone) {
   // An explicit Timezone field on the customer wins over everything else.
   // Validated first, so a typo falls back rather than crashing the panel.
   if (isValidZone(explicitZone)) {
-    return { zone: explicitZone, approximate: false };
+    return { zone: explicitZone, approximate: false, source: 'field' };
   }
 
   const rawCountry = String(country || '').trim().toUpperCase();
@@ -1343,22 +1348,28 @@ function resolveTimeZone(state, country, explicitZone) {
   if (!rawCountry) {
     const zone = STATE_ZONES.AUSTRALIA[normalisedState];
     if (zone && !STATE_AMBIGUOUS_WITHOUT_COUNTRY.has(normalisedState)) {
-      return { zone, approximate: false };
+      return { zone, approximate: false, source: 'state' };
     }
+    if (isValidZone(phoneZone)) return { zone: phoneZone, approximate: true, source: 'phone' };
     return null;
   }
 
   const normalisedCountry = COUNTRY_ALIASES[rawCountry];
-  if (!normalisedCountry) return null;
 
   // State resolved inside its own country. Exact, so no caveat.
   const zoneFromState = STATE_ZONES[normalisedCountry]?.[normalisedState];
-  if (zoneFromState) return { zone: zoneFromState, approximate: false };
+  if (zoneFromState) return { zone: zoneFromState, approximate: false, source: 'state' };
+
+  // The dialling code beats a country-level default: "703" narrows a US guest
+  // to Virginia, where "United States" would only ever guess New York.
+  if (isValidZone(phoneZone)) return { zone: phoneZone, approximate: true, source: 'phone' };
+
+  if (!normalisedCountry) return null;
 
   const match = COUNTRY_ZONES[normalisedCountry];
   if (!match) return null;
 
-  return { zone: match.zone, approximate: Boolean(match.spans) };
+  return { zone: match.zone, approximate: Boolean(match.spans), source: 'country' };
 }
 
 /**
@@ -1390,10 +1401,10 @@ function readZoneTime(timeZone) {
   return { ...base, band: 'Night', call: 'no' };
 }
 
-function LocalTime({ state, country, timezone }) {
+function LocalTime({ state, country, timezone, phoneTimezone }) {
   const resolved = useMemo(
-    () => resolveTimeZone(state, country, timezone),
-    [state, country, timezone],
+    () => resolveTimeZone(state, country, timezone, phoneTimezone),
+    [state, country, timezone, phoneTimezone],
   );
   const zone = resolved?.zone || null;
   const [now, setNow] = useState(() => (zone ? readZoneTime(zone) : null));
@@ -1426,8 +1437,13 @@ function LocalTime({ state, country, timezone }) {
       <span className="localTimeBand">
         {now.band}
         {resolved.approximate && (
-          <span className="zoneCaveat" title={`Zone assumed from country only (${zone}). Confirm with the guest.`}>
-            {' '}· zone assumed from country
+          <span
+            className="zoneCaveat"
+            title={resolved.source === 'phone'
+              ? `Worked out from the dialling code (${zone}). Numbers are portable, so confirm with the guest.`
+              : `Zone assumed from country only (${zone}). Confirm with the guest.`}
+          >
+            {' '}· {resolved.source === 'phone' ? 'from phone number' : 'zone assumed from country'}
           </span>
         )}
       </span>

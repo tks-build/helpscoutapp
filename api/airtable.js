@@ -1,4 +1,6 @@
 import Airtable from 'airtable';
+import { parsePhoneNumberFromString } from 'libphonenumber-js';
+import { timezones } from 'libphonenumber-geo-carrier';
 
 const {
   AIRTABLE_API_KEY,
@@ -461,6 +463,11 @@ async function shapeProfile(base, customer, email, mailboxId) {
       state: firstValue(fields[C.state]),
       country: firstValue(fields[C.country]),
       timezone: firstValue(fields[C.timezone]),
+      // Derived from the dialling code — useful for US and Canadian guests
+      // whose records have no state. Always a guess: mobile numbers are
+      // portable, so this says where the number was issued, not where they
+      // live. The panel labels it accordingly.
+      phoneTimezone: await timezoneFromPhone(fields[C.phone]),
       frequentTravelFriends: resolveTravelFriends(fields[C.frequentTravelFriends], travelFriends),
       // Multi-select arrives as an array; keep it as one so the UI can chip it.
       traits: asArray(fields[C.traits]).map(firstValue).filter(Boolean),
@@ -819,6 +826,30 @@ function parseRemainingDetails(value) {
     heading: (heading || '').trim(),
     items,
   };
+}
+
+/**
+ * Timezone from a phone number, using Google's libphonenumber data.
+ *
+ * Kept server-side: the timezone dataset is large and has no business being
+ * in the panel bundle. Returns '' for anything unparseable rather than
+ * guessing — a wrong time is worse than no time.
+ */
+async function timezoneFromPhone(value) {
+  const raw = firstValue(value).trim();
+  if (!raw) return '';
+
+  try {
+    const parsed = parsePhoneNumberFromString(raw);
+    if (!parsed || !parsed.isValid()) return '';
+
+    const zones = await timezones(parsed);
+    // Some prefixes map to several zones. The first is Google's best guess and
+    // this is already flagged as approximate in the UI.
+    return Array.isArray(zones) && zones.length ? zones[0] : '';
+  } catch {
+    return '';
+  }
 }
 
 /** A deadline that has already passed reads very differently from one that has not. */
