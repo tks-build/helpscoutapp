@@ -89,28 +89,32 @@ body {
 
 /* ---------------------------------------------------------------- buttons */
 
+/* Green rather than grey, and slightly larger. BMs reported not noticing
+   these at all — a muted arrow on a hairline border reads as decoration
+   rather than something you can click. */
 .iconButton,
 .rowLink {
   align-items: center;
-  background: var(--trtl-surface);
-  border: 1px solid var(--trtl-line);
+  background: var(--trtl-green-soft);
+  border: 1px solid var(--trtl-green-line);
   border-radius: var(--trtl-radius-sm);
-  color: var(--trtl-muted);
+  color: var(--trtl-green);
   display: inline-flex;
   flex: 0 0 auto;
-  font-size: 14px;
-  height: 24px;
+  font-size: 16px;
+  font-weight: 700;
+  height: 26px;
   justify-content: center;
   text-decoration: none;
   transition: border-color 0.12s, color 0.12s, background 0.12s;
-  width: 24px;
+  width: 26px;
 }
 
 .iconButton:hover,
 .rowLink:hover {
-  background: var(--trtl-green-soft);
+  background: var(--trtl-green);
   border-color: var(--trtl-green);
-  color: var(--trtl-green);
+  color: #ffffff;
 }
 
 /* Was .stackerInlineButton. Renamed with the CRM swap.
