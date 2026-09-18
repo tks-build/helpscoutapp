@@ -170,12 +170,20 @@ function ProfilePanel({ profile, showEmail, context }) {
     <section className="profilePanel">
       {flags.notAFit && <div className="alert">Not a Fit</div>}
 
+      {/* Order set by the BM team: SF and About Guest, then Leads, then
+          contact details. Most of them were scrolling straight past
+          everything to reach Leads, so it moved up rather than each person
+          rearranging the panel themselves.
+
+          Client Flag stays directly under SF regardless — it carries the
+          dietary and medical warnings, and those should never sit below a
+          fold. */}
       <SFCard customer={customer} showEmail={showEmail} />
       <FlagBlock flags={flags} />
-      <ContactCard customer={customer} />
 
-      <TripsSection bookings={bookings} />
       <LeadsTable leads={leads} />
+      <ContactCard customer={customer} />
+      <TripsSection bookings={bookings} />
 
       <MailvioSubscriptions
         email={customer?.matchedEmail || fields['Client Email']}
