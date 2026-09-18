@@ -38,8 +38,18 @@ export default async function handler(req, res) {
 
   try {
     if (req.method === 'GET') return await listSubscriptions(req, res, apiKey);
-    if (req.method === 'POST') return await addToGroup(req, res, apiKey);
-    if (req.method === 'DELETE') return await removeFromGroup(req, res, apiKey);
+
+    if (req.method === 'POST') {
+      // Three actions, no deletion. Removing a subscriber from their last
+      // group makes Mailvio delete the contact outright, taking tags, custom
+      // fields and history with it — so the panel never does that. Unsubscribe
+      // flips a status and leaves the record intact.
+      const { action } = readBody(req);
+      if (action === 'unsubscribe') return await changeStatus(req, res, apiKey, 'unsubscribed');
+      if (action === 'resubscribe') return await changeStatus(req, res, apiKey, 'active');
+      return await addToGroup(req, res, apiKey);
+    }
+
     return sendJson(res, 405, { error: 'Method Not Allowed' });
   } catch (error) {
     // Deliberately generic: upstream errors can echo request details back, and
@@ -62,7 +72,12 @@ async function listSubscriptions(req, res, apiKey) {
     return sendJson(res, 200, {
       subscriberExists: false,
       subscriberId: null,
-      groups: groups.map((group) => ({ id: group.id, name: group.name, subscribed: false })),
+      groups: groups.map((group) => ({
+        id: group.id,
+        name: group.name,
+        status: 'none',
+        subscribed: false,
+      })),
     });
   }
 
@@ -75,25 +90,37 @@ async function listSubscriptions(req, res, apiKey) {
     ? detail.GroupSubscribers
     : findMembershipArrays(detail, knownIds);
 
-  const identities = memberships.map(groupIdentity).filter((item) => item.active !== false);
+  const identities = memberships.map(groupIdentity);
 
-  // Matched on id, falling back to name. If Mailvio ever returns ids in a
-  // shape we don't recognise, the names still line up and the panel stays
-  // correct rather than quietly showing everyone as unsubscribed.
-  const memberIds = new Set(identities.map((item) => item.id).filter(Boolean));
-  const memberNames = new Set(
-    identities.map((item) => item.name?.trim().toLowerCase()).filter(Boolean),
-  );
+  // Three states per group, not two. An unsubscribed contact is still bound to
+  // the group — that binding is what lets them be resubscribed later without
+  // losing anything, so it must be distinguishable from never having joined.
+  const statusById = new Map();
+  const statusByName = new Map();
+
+  for (const item of identities) {
+    const status = item.active === false ? 'unsubscribed' : 'active';
+    if (item.id) statusById.set(item.id, status);
+    if (item.name) statusByName.set(item.name.trim().toLowerCase(), status);
+  }
 
   return sendJson(res, 200, {
     subscriberExists: true,
     subscriberId: subscriber.id,
-    groups: groups.map((group) => ({
-      id: group.id,
-      name: group.name,
-      subscribed: memberIds.has(String(group.id))
-        || memberNames.has(String(group.name).trim().toLowerCase()),
-    })),
+    groups: groups.map((group) => {
+      // Matched on id, falling back to name, so an unrecognised id shape
+      // doesn't silently report everyone as unsubscribed.
+      const status = statusById.get(String(group.id))
+        || statusByName.get(String(group.name).trim().toLowerCase())
+        || 'none';
+
+      return {
+        id: group.id,
+        name: group.name,
+        status,
+        subscribed: status === 'active',
+      };
+    }),
   });
 }
 
@@ -121,22 +148,30 @@ async function addToGroup(req, res, apiKey) {
   return sendJson(res, 200, { ok: true });
 }
 
-async function removeFromGroup(req, res, apiKey) {
-  const body = readBody(req);
-  const email = normaliseEmail(body.email || req.query.email);
-  const groupId = body.groupId || req.query.groupId;
+/**
+ * Flips a subscriber's status within one group, leaving the record and the
+ * group binding in place.
+ *
+ * Deliberately not Mailvio's global /subscriber/unsubscribe, which
+ * unsubscribes and blacklists across every group.
+ */
+async function changeStatus(req, res, apiKey, newStatus) {
+  const { email, groupId } = readBody(req);
+  const cleanEmail = normaliseEmail(email);
 
-  if (!email || !isEmail(email)) return sendJson(res, 400, { error: 'A valid email is required' });
+  if (!cleanEmail || !isEmail(cleanEmail)) return sendJson(res, 400, { error: 'A valid email is required' });
   if (!(await isKnownGroup(apiKey, groupId))) return sendJson(res, 400, { error: 'Unknown group' });
 
-  // 404 is treated as success. Removal is idempotent — "they are not in this
-  // group" is the desired end state either way, and Mailvio returns 404 when
-  // the membership (or the subscriber record) has already gone, which happens
-  // when this was their only group.
-  await mailvio(apiKey, `/group/${encodeURIComponent(groupId)}/subscriber`, {
-    method: 'DELETE',
-    body: JSON.stringify({ emailAddresses: [email] }),
-  }, { allowMissing: true });
+  // Looked up here rather than trusting an id from the browser.
+  const subscriber = await findSubscriber(apiKey, cleanEmail);
+  if (!subscriber) {
+    return sendJson(res, 404, { error: 'That contact is not in Mailvio' });
+  }
+
+  await mailvio(apiKey, `/group/${encodeURIComponent(groupId)}/subscriber/changeStatus`, {
+    method: 'POST',
+    body: JSON.stringify({ subscriberIds: [subscriber.id], newStatus }),
+  });
 
   return sendJson(res, 200, { ok: true });
 }

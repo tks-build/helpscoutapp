@@ -453,7 +453,7 @@ function MailvioSubscriptions({ email, context }) {
     if (open) load();
   }, [open, load]);
 
-  async function mutate(group, method) {
+  async function mutate(group, action) {
     // One request at a time per group, so a double click cannot fire twice.
     if (busyGroupId) return;
     setBusyGroupId(group.id);
@@ -462,9 +462,10 @@ function MailvioSubscriptions({ email, context }) {
 
     try {
       const response = await fetch('/api/mailvio', {
-        method,
+        method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
+          action,
           email,
           groupId: group.id,
           mailboxId,
@@ -535,64 +536,73 @@ function MailvioSubscriptions({ email, context }) {
               {error && <div className="activityStatus">{error}</div>}
 
               <div className="mailvioList">
-                {state.groups.map((group) => (
-                  <div className="mailvioRow" key={group.id}>
-                    <span className={`mailvioTick ${group.subscribed ? 'on' : ''}`}>
-                      {group.subscribed ? '✓' : ''}
-                    </span>
-                    <span className="mailvioName">{group.name}</span>
+                {state.groups.map((group) => {
+                  // 'none' — never joined. 'unsubscribed' — still bound to the
+                  // group, so resubscribing restores them without losing
+                  // anything. 'active' — currently receiving.
+                  const status = group.status || (group.subscribed ? 'active' : 'none');
 
-                    {confirmingId === group.id ? (
-                      <span className="mailvioConfirm">
-                        <button
-                          className="chevronButton mailvioAction danger"
-                          disabled={busyGroupId === group.id}
-                          onClick={() => mutate(group, 'DELETE')}
-                          type="button"
-                        >
-                          Confirm
-                        </button>
+                  return (
+                    <div className="mailvioRow" key={group.id}>
+                      <span className={`mailvioTick ${status === 'active' ? 'on' : ''}`}>
+                        {status === 'active' ? '✓' : ''}
+                      </span>
+                      <span className={`mailvioName status-${status}`}>
+                        {group.name}
+                        {status === 'unsubscribed' && (
+                          <span className="mailvioStatusNote">unsubscribed</span>
+                        )}
+                      </span>
+
+                      {confirmingId === group.id ? (
+                        <span className="mailvioConfirm">
+                          <button
+                            className="chevronButton mailvioAction"
+                            disabled={busyGroupId === group.id}
+                            onClick={() => mutate(group, 'unsubscribe')}
+                            type="button"
+                          >
+                            Confirm
+                          </button>
+                          <button
+                            className="chevronButton mailvioAction"
+                            onClick={() => setConfirmingId(null)}
+                            type="button"
+                          >
+                            Cancel
+                          </button>
+                        </span>
+                      ) : (
                         <button
                           className="chevronButton mailvioAction"
-                          onClick={() => setConfirmingId(null)}
+                          disabled={Boolean(busyGroupId)}
+                          onClick={() => {
+                            if (status === 'active') setConfirmingId(group.id);
+                            else if (status === 'unsubscribed') mutate(group, 'resubscribe');
+                            else mutate(group, 'subscribe');
+                          }}
                           type="button"
                         >
-                          Cancel
+                          {busyGroupId === group.id
+                            ? '…'
+                            : status === 'active'
+                              ? 'Unsubscribe'
+                              : status === 'unsubscribed'
+                                ? 'Resubscribe'
+                                : 'Subscribe'}
                         </button>
-                      </span>
-                    ) : (
-                      <button
-                        className="chevronButton mailvioAction"
-                        disabled={Boolean(busyGroupId)}
-                        onClick={() => (group.subscribed
-                          ? setConfirmingId(group.id)
-                          : mutate(group, 'POST'))}
-                        type="button"
-                      >
-                        {busyGroupId === group.id ? '…' : group.subscribed ? 'Remove' : 'Add'}
-                      </button>
-                    )}
-                  </div>
-                ))}
+                      )}
+                    </div>
+                  );
+                })}
               </div>
 
               {confirmingId && (
-                subscribedCount <= 1 ? (
-                  /* Mailvio deletes the subscriber outright when their last
-                     group membership is removed, taking tags and history with
-                     it. That is not what "remove from group" implies, so it
-                     has to be said plainly before the click. */
-                  <div className="mailvioWarning">
-                    <strong>This is their only group.</strong> Removing it deletes {email} from
-                    Mailvio entirely, including their tags and history. That cannot be undone.
-                  </div>
-                ) : (
-                  <div className="noFeedback">
-                    Remove {email} from{' '}
-                    {state.groups.find((group) => group.id === confirmingId)?.name}? They stay
-                    subscribed to their other {subscribedCount - 1 === 1 ? 'group' : 'groups'}.
-                  </div>
-                )
+                <div className="noFeedback">
+                  Unsubscribe {email} from{' '}
+                  {state.groups.find((group) => group.id === confirmingId)?.name}? They stay in
+                  Mailvio and can be resubscribed at any time.
+                </div>
               )}
             </>
           )}

@@ -1053,15 +1053,17 @@ body {
   width: auto;
 }
 
-.mailvioAction.danger {
-  border-color: var(--trtl-red-line);
-  color: var(--trtl-red);
+/* Still bound to the group, just not receiving. Muted rather than absent, so
+   it reads differently from a group they never joined. */
+.mailvioName.status-unsubscribed {
+  color: var(--trtl-muted);
 }
 
-.mailvioAction.danger:hover {
-  background: var(--trtl-red-bg);
-  border-color: var(--trtl-red);
-  color: var(--trtl-red);
+.mailvioStatusNote {
+  color: var(--trtl-muted-2);
+  font-size: 10px;
+  font-style: italic;
+  margin-left: 6px;
 }
 
 .mailvioAction:disabled {
@@ -1074,17 +1076,6 @@ body {
   gap: 4px;
 }
 
-/* Deleting a subscriber is not the same as unsubscribing them from a list.
-   Red, because it is the one irreversible action in this panel. */
-.mailvioWarning {
-  background: var(--trtl-red-bg);
-  border: 1px solid var(--trtl-red-line);
-  border-radius: var(--trtl-radius-sm);
-  color: var(--trtl-red);
-  font-size: 11.5px;
-  line-height: 1.4;
-  padding: 6px 8px;
-}
 
 /* ----------------------------------------------------------- activity log */
 
