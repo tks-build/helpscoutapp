@@ -367,7 +367,11 @@ function LeadsTable({ leads }) {
 
   return (
     <section className="section">
-      <LeadGroup leads={open} title="Open leads" defaultOpen />
+      {/* Open, Converted and Closed sit under a Leads heading. On their own
+          they read as unrelated sections — a lone "CONVERTED" tells a BM
+          nothing about what has been converted. */}
+      <div className="panelSectionTitle">Leads</div>
+      <LeadGroup leads={open} title="Open" defaultOpen />
       <LeadGroup leads={converted} title="Converted" />
       <LeadGroup leads={closed} title="Closed" />
     </section>
@@ -383,7 +387,7 @@ function LeadGroup({ leads, title, defaultOpen = false }) {
   if (!leads.length) return null;
 
   return (
-    <CollapsibleGroup title={title} count={leads.length} defaultOpen={defaultOpen}>
+    <CollapsibleGroup title={title} count={leads.length} defaultOpen={defaultOpen} nested>
       <div className="dataTable leadsTable">
         <div className="tableHeader">
           <span>Lead Trip</span>
@@ -403,12 +407,16 @@ function LeadGroup({ leads, title, defaultOpen = false }) {
  * Shared collapsible section header, used by both trip and lead groups so the
  * two read identically. Groups needing action open by default; history does not.
  */
-function CollapsibleGroup({ title, count, defaultOpen = false, children }) {
+function CollapsibleGroup({ title, count, defaultOpen = false, nested = false, children }) {
   const [open, setOpen] = useState(defaultOpen);
 
   return (
-    <div className="collapsibleGroup">
-      <button className="activityToggle" onClick={() => setOpen(!open)} type="button">
+    <div className={`collapsibleGroup ${nested ? 'nested' : ''}`}>
+      <button
+        className={`activityToggle ${nested ? 'nestedToggle' : ''}`}
+        onClick={() => setOpen(!open)}
+        type="button"
+      >
         <span className="activityChevron">{open ? '▲' : '▼'}</span>
         {title}
         {count > 0 && <span className="activityCount">{count}</span>}

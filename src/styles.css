@@ -653,8 +653,8 @@ body {
 }
 
 .groupTitle {
-  color: var(--trtl-muted);
-  font-size: 10.5px;
+  color: var(--trtl-ink-2);
+  font-size: 12px;
   font-weight: 700;
   letter-spacing: 0.07em;
   text-transform: uppercase;
@@ -1098,20 +1098,42 @@ body {
   justify-content: space-between;
 }
 
+/* Section headings, enlarged from 10.5px — BMs found them hard to pick out
+   while scanning. */
+.panelSectionTitle {
+  color: var(--trtl-ink-2);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+}
+
 .activityToggle {
   align-items: center;
   background: none;
   border: none;
-  color: var(--trtl-muted);
+  color: var(--trtl-ink-2);
   cursor: pointer;
   display: flex;
   font: inherit;
-  font-size: 10.5px;
+  font-size: 12px;
   font-weight: 700;
   gap: 6px;
   letter-spacing: 0.07em;
   padding: 0;
   text-transform: uppercase;
+}
+
+/* Sub-groups under a section heading — Open, Converted, Closed beneath
+   Leads. Smaller and indented so the hierarchy is obvious rather than three
+   headings of equal weight sitting in a row. */
+.collapsibleGroup.nested {
+  padding-left: 9px;
+}
+
+.activityToggle.nestedToggle {
+  color: var(--trtl-muted);
+  font-size: 10.5px;
 }
 
 .activityToggle:hover {
