@@ -53,6 +53,9 @@ const BATCH_SIZE = Number(SF_BATCH_SIZE) || 25;
 // rather than being killed mid-write.
 const TIME_BUDGET_MS = 45000;
 
+/** Guests handled in parallel. Kept low so Airtable stays under 5 req/sec. */
+const CONCURRENCY = 3;
+
 const FIELDS = {
   aboutGuest: 'About Guest',
   summary: 'SF Summary',
@@ -116,44 +119,24 @@ export default async function handler(req, res) {
     const customers = await findCustomersNeedingSummary(base);
     stats.considered = customers.length;
 
-    for (const customer of customers) {
-      if (Date.now() - startedAt > TIME_BUDGET_MS) {
-        stats.skipped = customers.length - (stats.written + stats.insufficient + stats.failed);
-        break;
+    // Processed a few at a time. Each guest is mostly waiting — on Airtable,
+    // then on the model — so running them strictly one after another leaves
+    // the function idle for most of its budget. Kept low so the Airtable
+    // calls underneath stay within five requests a second.
+    const queue = [...customers];
+
+    const worker = async () => {
+      while (queue.length) {
+        if (Date.now() - startedAt > TIME_BUDGET_MS) return;
+        const customer = queue.shift();
+        if (!customer) return;
+
+        await processCustomer(base, customer, stats);
       }
+    };
 
-      try {
-        const today = new Date().toISOString().slice(0, 10);
-        const material = await gatherMaterial(base, customer);
-
-        // Nothing to summarise. The summary stays blank — the panel shows
-        // nothing rather than "no information available" — but the guest is
-        // still marked as checked so they leave the queue.
-        if (!material) {
-          await base(TABLE_CUSTOMERS).update(customer.id, { [FIELDS.summaryChecked]: today });
-          stats.insufficient += 1;
-          continue;
-        }
-
-        const summary = await generateSummary(material);
-
-        if (!summary || summary === 'INSUFFICIENT') {
-          await base(TABLE_CUSTOMERS).update(customer.id, { [FIELDS.summaryChecked]: today });
-          stats.insufficient += 1;
-          continue;
-        }
-
-        await base(TABLE_CUSTOMERS).update(customer.id, {
-          [FIELDS.summary]: summary,
-          [FIELDS.summaryChecked]: today,
-        });
-        stats.written += 1;
-      } catch (error) {
-        // One bad record must not stop the batch.
-        console.error(`SF summary failed for ${customer.id}:`, getErrorMessage(error));
-        stats.failed += 1;
-      }
-    }
+    await Promise.all(Array.from({ length: CONCURRENCY }, worker));
+    stats.skipped = queue.length;
 
     return sendJson(res, 200, { ok: true, ...stats });
   } catch (error) {
@@ -162,12 +145,43 @@ export default async function handler(req, res) {
   }
 }
 
-/**
- * Only guests who need one: no summary yet, or one older than a week.
- *
- * Regenerating everyone weekly would be mostly waste — most guests do not
- * change between runs — and would cost many times more for the same result.
- */
+async function processCustomer(base, customer, stats) {
+  const today = new Date().toISOString().slice(0, 10);
+
+  try {
+    const material = await gatherMaterial(base, customer);
+
+    // Nothing to summarise. The summary stays blank — the panel shows nothing
+    // rather than "no information available" — but the guest is still marked
+    // as checked so they leave the queue.
+    if (!material) {
+      await base(TABLE_CUSTOMERS).update(customer.id, { [FIELDS.summaryChecked]: today });
+      stats.insufficient += 1;
+      return;
+    }
+
+    const summary = await generateSummary(material);
+
+    if (!summary || summary === 'INSUFFICIENT') {
+      await base(TABLE_CUSTOMERS).update(customer.id, { [FIELDS.summaryChecked]: today });
+      stats.insufficient += 1;
+      return;
+    }
+
+    await base(TABLE_CUSTOMERS).update(customer.id, {
+      [FIELDS.summary]: summary,
+      [FIELDS.summaryChecked]: today,
+    });
+    stats.written += 1;
+  } catch (error) {
+    // One bad record must not stop the batch. Deliberately not stamped as
+    // checked, so a transient failure is retried on the next run.
+    console.error(`SF summary failed for ${customer.id}:`, getErrorMessage(error));
+    stats.failed += 1;
+  }
+}
+
+/** Most-travelled guests who have never been looked at. */
 async function findCustomersNeedingSummary(base) {
   // Never looked at, and has something to look at.
   const formula = `AND(
@@ -200,18 +214,21 @@ async function gatherMaterial(base, customer) {
   const aboutGuest = firstValue(customer.fields[FIELDS.aboutGuest]);
   const bookingIds = asArray(customer.fields[FIELDS.bookings]).filter(isRecordId);
 
-  const bookings = await Promise.all(
-    bookingIds.slice(0, 12).map(async (id) => {
-      try {
-        return await base(TABLE_BOOKINGS).find(id);
-      } catch {
-        return null;
-      }
-    }),
-  );
+  // One query for all of a guest's bookings rather than one request each.
+  // Fetching a dozen individually fires a dozen calls against Airtable's
+  // 5-per-second limit, and the resulting backoff was most of the run time.
+  const wanted = bookingIds.slice(0, 12);
+  const bookings = wanted.length
+    ? await base(TABLE_BOOKINGS)
+      .select({
+        maxRecords: wanted.length,
+        filterByFormula: `OR(${wanted.map((id) => `RECORD_ID() = '${id}'`).join(',')})`,
+      })
+      .firstPage()
+      .catch(() => [])
+    : [];
 
   const trips = bookings
-    .filter(Boolean)
     .map((booking) => {
       const lines = FEEDBACK_FIELDS
         .map(([label, field]) => {
