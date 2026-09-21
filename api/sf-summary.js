@@ -35,13 +35,19 @@ const {
 const MODEL = 'claude-haiku-4-5-20251001';
 const BATCH_SIZE = Number(SF_BATCH_SIZE) || 25;
 /**
- * A guest is regenerated when their record has changed since the last run, or
- * when the summary is this old regardless. Thirty days rather than seven:
- * rewriting every guest weekly would cost many times more and mostly produce
- * the same paragraph, and the change check already catches anyone whose
- * details have actually moved.
+ * Backfill only, by decision: every guest gets a summary once, and nothing is
+ * regenerated afterwards until a refresh policy is agreed.
+ *
+ * That makes this job self-terminating. Once every guest has been looked at,
+ * the queue is empty and each run costs one Airtable query and nothing else,
+ * so the schedule can be left in place harmlessly.
+ *
+ * The refresh logic to add later, when it is settled, is: regenerate when the
+ * customer record or any of their bookings has changed since SF Summary
+ * Checked. That needs a rollup on Customers of MAX(Bookings -> Last Modified
+ * Time), because feedback lives on bookings and editing one does not touch the
+ * customer record — which is exactly when a summary goes stale.
  */
-const STALE_AFTER_DAYS = 30;
 
 // Leave headroom under the function timeout so a slow run finishes cleanly
 // rather than being killed mid-write.
@@ -53,8 +59,11 @@ const FIELDS = {
   summaryUpdated: 'SF Summary Updated',
   preferredName: 'Preferred Name',
   bookings: 'Bookings',
-  lastModified: 'Last Modified Time',
   pastTrips: 'Past Trips #',
+  // Stamped on every attempt, including ones that produce nothing. Without it
+  // a guest with no material stays blank and is retried every run forever,
+  // consuming a batch slot and a model call each time.
+  summaryChecked: 'SF Summary Checked',
 };
 
 /** Feedback fields read from each booking, in the order they are given to the model. */
@@ -114,11 +123,14 @@ export default async function handler(req, res) {
       }
 
       try {
+        const today = new Date().toISOString().slice(0, 10);
         const material = await gatherMaterial(base, customer);
 
-        // Nothing to summarise. Left blank rather than writing a placeholder,
-        // so the panel shows nothing instead of "no information available".
+        // Nothing to summarise. The summary stays blank — the panel shows
+        // nothing rather than "no information available" — but the guest is
+        // still marked as checked so they leave the queue.
         if (!material) {
+          await base(TABLE_CUSTOMERS).update(customer.id, { [FIELDS.summaryChecked]: today });
           stats.insufficient += 1;
           continue;
         }
@@ -126,11 +138,15 @@ export default async function handler(req, res) {
         const summary = await generateSummary(material);
 
         if (!summary || summary === 'INSUFFICIENT') {
+          await base(TABLE_CUSTOMERS).update(customer.id, { [FIELDS.summaryChecked]: today });
           stats.insufficient += 1;
           continue;
         }
 
-        await base(TABLE_CUSTOMERS).update(customer.id, { [FIELDS.summary]: summary });
+        await base(TABLE_CUSTOMERS).update(customer.id, {
+          [FIELDS.summary]: summary,
+          [FIELDS.summaryChecked]: today,
+        });
         stats.written += 1;
       } catch (error) {
         // One bad record must not stop the batch.
@@ -153,14 +169,9 @@ export default async function handler(req, res) {
  * change between runs — and would cost many times more for the same result.
  */
 async function findCustomersNeedingSummary(base) {
-  const staleBefore = `DATEADD(TODAY(), -${STALE_AFTER_DAYS}, 'days')`;
-
+  // Never looked at, and has something to look at.
   const formula = `AND(
-    OR(
-      {${FIELDS.summary}} = BLANK(),
-      IS_AFTER({${FIELDS.lastModified}}, {${FIELDS.summaryUpdated}}),
-      IS_BEFORE({${FIELDS.summaryUpdated}}, ${staleBefore})
-    ),
+    {${FIELDS.summaryChecked}} = BLANK(),
     OR(
       {${FIELDS.aboutGuest}} != BLANK(),
       COUNTA({${FIELDS.bookings}}) > 0
@@ -179,10 +190,7 @@ async function findCustomersNeedingSummary(base) {
     .select({
       maxRecords: BATCH_SIZE,
       filterByFormula: formula,
-      sort: [
-        { field: FIELDS.pastTrips, direction: 'desc' },
-        { field: FIELDS.summaryUpdated, direction: 'asc' },
-      ],
+      sort: [{ field: FIELDS.pastTrips, direction: 'desc' }],
     })
     .firstPage();
 }
