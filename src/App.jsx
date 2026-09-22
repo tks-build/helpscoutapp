@@ -337,14 +337,33 @@ function ContactCard({ customer }) {
   const p = customer?.profile || {};
   const phone = p.phone || customer?.fields?.['Phone Number'];
 
+  const link = crmUrl(customer);
+
   return (
-    <section className="summaryStack">
+    // Headed and ruled like every other section. Unlabelled, these fields sat
+    // between the Leads groups and the trip groups with nothing marking where
+    // one section ended, so they read as part of Leads.
+    //
+    // Header borrowed wholesale from Activity log — title left, CRM arrow
+    // right. The arrow used to be a full-height bar in the grid beside the
+    // fields, which made a link the tallest green object on the page.
+    <section className="section">
+      <div className="activityHeader">
+        <span className="panelSectionTitle">Contact</span>
+        {link && (
+          <a className="iconButton" href={link} rel="noreferrer" target="_blank" title="Open customer in CRM">
+            <span aria-hidden="true">&rarr;</span>
+          </a>
+        )}
+      </div>
+
       {p.viaAgent && (
         <div className="agentNotice">
           Booked through a travel agent — check before contacting the guest directly
         </div>
       )}
-      <div className="infoGrid contactGrid">
+
+      <div className="contactCard">
         <PhoneRow value={phone} />
         <LocalTime
           state={p.state}
@@ -352,11 +371,6 @@ function ContactCard({ customer }) {
           timezone={p.timezone}
           phoneTimezone={p.phoneTimezone}
         />
-        {crmUrl(customer) && (
-          <a className="iconButton crmInlineButton" href={crmUrl(customer)} rel="noreferrer" target="_blank" title="Open customer in CRM">
-            <span aria-hidden="true">&rarr;</span>
-          </a>
-        )}
       </div>
     </section>
   );
@@ -1459,12 +1473,12 @@ function LocalTime({ state, country, timezone, phoneTimezone }) {
     : 'Middle of the night';
 
   return (
-    <div className="infoRow localTime">
-      <div>
-        <Text size={11} className="label">Guest time</Text>
-        <span>{now.display} {now.abbrev}</span>
+    <div className="contactField localTime">
+      <span className="touchLabel">Guest time</span>
+      <div className="contactValueRow">
+        <span className="contactValue">{now.display} {now.abbrev}</span>
+        <span className={`chip callChip call-${now.call}`}>{callLabel}</span>
       </div>
-      <span className={`chip callChip call-${now.call}`}>{callLabel}</span>
       <span className="localTimeBand">
         {now.band}
         {resolved.approximate && (
@@ -1498,14 +1512,14 @@ function PhoneRow({ value }) {
   const text = formatValue(value);
 
   return (
-    <div className="infoRow phoneRow">
-      <div>
-        <Text size={11} className="label">Phone</Text>
-        <span>{text}</span>
+    <div className="contactField phoneRow">
+      <span className="touchLabel">Phone</span>
+      <div className="contactValueRow">
+        <span className="contactValue">{text}</span>
+        <button className="copyIconButton" onClick={() => copyText(text)} title="Copy phone" type="button">
+          Copy
+        </button>
       </div>
-      <button className="copyIconButton" onClick={() => copyText(text)} title="Copy phone" type="button">
-        Copy
-      </button>
     </div>
   );
 }
