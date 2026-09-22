@@ -1,10 +1,18 @@
 /**
  * Weekly SF "Good to know" generator.
  *
- * Reads each guest's About Guest note and their post-trip feedback, writes a
- * short paragraph into SF Summary. The panel displays that field; nothing has
- * been writing to it until now, which is why the section has been empty for
- * guests who plainly have history.
+ * Reads each guest's post-trip feedback and writes a short paragraph into SF
+ * Summary. The panel displays that field; nothing has been writing to it until
+ * now, which is why the section has been empty for guests who plainly have
+ * history.
+ *
+ * Deliberately does NOT read About Guest. That field is free text written by
+ * BMs for BMs, full of shorthand and implication, and the model read it too
+ * literally: one guest's note that a cruise "may be her sister's last" — a
+ * remark about the sister's health — came back as a cruise booked with us.
+ * Feedback fields describe trips that demonstrably happened, and the panel
+ * shows About Guest immediately below the summary anyway, so nothing is lost
+ * by leaving it out.
  *
  * Runs on a schedule rather than on demand, deliberately:
  *   - generating on panel load would mean a model call every time a BM opens a
@@ -57,7 +65,6 @@ const TIME_BUDGET_MS = 45000;
 const CONCURRENCY = 3;
 
 const FIELDS = {
-  aboutGuest: 'About Guest',
   summary: 'SF Summary',
   summaryUpdated: 'SF Summary Updated',
   preferredName: 'Preferred Name',
@@ -69,10 +76,19 @@ const FIELDS = {
   summaryChecked: 'SF Summary Checked',
 };
 
-/** Feedback fields read from each booking, in the order they are given to the model. */
-const FEEDBACK_FIELDS = [
+/**
+ * Identifies the trip but says nothing about the guest. Included for context
+ * so the model can tell one trip from another, but a booking carrying only
+ * these is not worth summarising — "travels often and rates us highly" is not
+ * a briefing.
+ */
+const TRIP_CONTEXT_FIELDS = [
   ['Trip', 'Trip Title'],
   ['Internal rating', 'Internal Rating out of 5'],
+];
+
+/** Feedback fields read from each booking, in the order they are given to the model. */
+const FEEDBACK_FIELDS = [
   ['Summary', 'Summary & Other Feedback'],
   ['Guide', 'Guide Feedback'],
   ['Accommodation', 'Accommodation Feedback'],
@@ -87,12 +103,13 @@ const FEEDBACK_FIELDS = [
 
 const SYSTEM_PROMPT = `You write short internal notes that help a travel Booking Manager prepare for a phone call with a guest.
 
-You are given a guest's "About Guest" note and the feedback they gave after previous trips. Write one paragraph, 40-80 words, telling the BM what they need to know before speaking to this person.
+You are given the feedback a guest gave after trips they have already completed. Write one paragraph, 40-80 words, telling the BM what they need to know before speaking to this person.
 
 Rules:
-- Write only what the source material supports. Never invent preferences, traits or history.
+- Write only what the source material states. Never invent preferences, traits or history, and never infer a cause, a motive or a circumstance that is not written down.
+- Everything you are given is feedback on a completed trip. Do not describe future or planned travel, and do not state or imply that any trip is booked.
 - Prefer patterns that repeat across trips over one-off remarks.
-- Lead with anything that changes how the BM should sell or serve: what they consistently love, what they complain about, how they like to be contacted, who they travel with.
+- Lead with anything that changes how the BM should sell or serve: what they consistently love, what they complain about, who they travel with.
 - Plain British English. No headings, no bullet points, no preamble, no sign-off.
 - Write about the guest, not about the feedback. Not "feedback indicates the guest enjoyed" but "loves a long rail day".
 - If the material is too thin to say anything useful, reply with exactly: INSUFFICIENT`;
@@ -183,13 +200,11 @@ async function processCustomer(base, customer, stats) {
 
 /** Most-travelled guests who have never been looked at. */
 async function findCustomersNeedingSummary(base) {
-  // Never looked at, and has something to look at.
+  // Never looked at, and has a trip to draw feedback from. Guests with no
+  // bookings cannot produce anything, so they are not worth a batch slot.
   const formula = `AND(
     {${FIELDS.summaryChecked}} = BLANK(),
-    OR(
-      {${FIELDS.aboutGuest}} != BLANK(),
-      COUNTA({${FIELDS.bookings}}) > 0
-    )
+    COUNTA({${FIELDS.bookings}}) > 0
   )`;
 
   // Most-travelled first. They have the richest feedback to draw on and are
@@ -209,9 +224,8 @@ async function findCustomersNeedingSummary(base) {
     .firstPage();
 }
 
-/** The guest's own note plus whatever their past trips recorded. */
+/** Whatever the guest's past trips recorded. Feedback only — see the file header. */
 async function gatherMaterial(base, customer) {
-  const aboutGuest = firstValue(customer.fields[FIELDS.aboutGuest]);
   const bookingIds = asArray(customer.fields[FIELDS.bookings]).filter(isRecordId);
 
   // One query for all of a guest's bookings rather than one request each.
@@ -230,26 +244,29 @@ async function gatherMaterial(base, customer) {
 
   const trips = bookings
     .map((booking) => {
-      const lines = FEEDBACK_FIELDS
-        .map(([label, field]) => {
-          const value = firstValue(booking.fields[field]);
-          return value ? `${label}: ${value}` : '';
-        })
-        .filter(Boolean);
+      const said = lines(booking, FEEDBACK_FIELDS);
 
-      return lines.length > 1 ? lines.join('\n') : '';
+      // A trip title and a score on their own say nothing about the guest.
+      if (said.length === 0) return '';
+
+      return [...lines(booking, TRIP_CONTEXT_FIELDS), ...said].join('\n');
     })
     .filter(Boolean);
 
-  if (!aboutGuest && trips.length === 0) return null;
+  if (trips.length === 0) return null;
 
   const name = firstValue(customer.fields[FIELDS.preferredName]) || 'This guest';
 
-  return [
-    `Guest: ${name}`,
-    aboutGuest ? `\nAbout Guest note:\n${aboutGuest}` : '',
-    trips.length ? `\nPast trip feedback:\n\n${trips.join('\n\n---\n\n')}` : '',
-  ].filter(Boolean).join('\n');
+  return `Guest: ${name}\n\nFeedback from completed trips:\n\n${trips.join('\n\n---\n\n')}`;
+}
+
+function lines(booking, fields) {
+  return fields
+    .map(([label, field]) => {
+      const value = firstValue(booking.fields[field]);
+      return value ? `${label}: ${value}` : '';
+    })
+    .filter(Boolean);
 }
 
 async function generateSummary(material) {
