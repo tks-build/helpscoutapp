@@ -286,7 +286,10 @@ function SFCard({ customer, showEmail }) {
       {sf.summary && (
         <div className="sfNote sfGenerated">
           <span className="label">Good to know</span>
-          <div className="plainText multiline">{sf.summary}</div>
+          {splitIntoBlocks(sf.summary).map((block, index) => (
+            // eslint-disable-next-line react/no-array-index-key
+            <p className="plainText summaryBlock" key={index}>{block}</p>
+          ))}
           {sf.summaryUpdated && <div className="sfStamp">Generated {sf.summaryUpdated}</div>}
         </div>
       )}
@@ -299,6 +302,61 @@ function SFCard({ customer, showEmail }) {
       )}
     </section>
   );
+}
+
+/**
+ * Handset glyph for the Contact heading. Drawn inline rather than pulled from
+ * an icon library — one icon does not justify a dependency, and inheriting
+ * stroke width and currentColor keeps it in step with the rest of the panel.
+ */
+function PhoneIcon() {
+  return (
+    <svg
+      aria-hidden="true"
+      className="sectionIcon"
+      fill="none"
+      stroke="currentColor"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      strokeWidth="2"
+      viewBox="0 0 24 24"
+    >
+      <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6A19.79 19.79 0 0 1 2.12 4.18 2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.13.96.36 1.9.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.91.34 1.85.57 2.81.7A2 2 0 0 1 22 16.92z" />
+    </svg>
+  );
+}
+
+/**
+ * Breaks the generated summary into blocks of two sentences.
+ *
+ * The model returns a single paragraph. At 60-80 words that is a solid brick
+ * of text, and a BM skimming it mid-call reads none of it. Split here rather
+ * than in the prompt, so it applies to every summary already written and
+ * survives any later change to how they are generated.
+ *
+ * Implemented as a marked split rather than a sentence-matching regex. A
+ * match-based version silently dropped any text it failed to match — "Rates
+ * us 4.8 out of 5" came back as "8 out of 5" — and losing words from a
+ * briefing is far worse than failing to break it.
+ *
+ * A break needs punctuation, then a space, then something that can begin a
+ * sentence. Decimals survive because "4.8" has no space after the point.
+ */
+function splitIntoBlocks(text, perBlock = 2) {
+  const normalised = String(text || '').replace(/\s+/g, ' ').trim();
+  if (!normalised) return [];
+
+  const sentences = normalised
+    .replace(/([.!?])\s+(?=["'(‘“]?[A-Z])/g, '$1 ')
+    .split(' ')
+    .map((sentence) => sentence.trim())
+    .filter(Boolean);
+
+  const blocks = [];
+  for (let i = 0; i < sentences.length; i += perBlock) {
+    blocks.push(sentences.slice(i, i + perBlock).join(' '));
+  }
+  return blocks;
 }
 
 function Stat({ value, label, note }) {
@@ -354,7 +412,10 @@ function ContactCard({ customer }) {
     // fields, which made a link the tallest green object on the page.
     <section className="section">
       <div className="activityHeader">
-        <span className="panelSectionTitle">Contact</span>
+        <span className="panelSectionTitle sectionTitleWithIcon">
+          <PhoneIcon />
+          Contact
+        </span>
         {link && (
           <a className="iconButton" href={link} rel="noreferrer" target="_blank" title="Open customer in CRM">
             <span aria-hidden="true">&rarr;</span>
@@ -904,15 +965,21 @@ function TripsSection({ bookings }) {
   if (!active.length && !upcoming.length && !past.length && !cancelled.length) return null;
 
   return (
-    <section className="tripsSection">
-      <div className="tripGroups">
-        {/* Live and upcoming trips are what a BM acts on, so they stay open.
-            History collapses — a ten-trip guest is otherwise most of the panel. */}
-        <TripGroup rows={active} title="Active Trips" defaultOpen />
-        <TripGroup rows={upcoming} title="Upcoming Trips" defaultOpen />
-        <TripGroup rows={past} title="Past Trips" />
-        <TripGroup rows={cancelled} title="Cancelled Trips" />
-      </div>
+    // Mirrors Leads: a parent heading with the states nested beneath it.
+    // Without it, Past and Cancelled sat at the same visual level as Open,
+    // Converted and Closed, and the two groups ran together as one list of
+    // six rows with no indication where leads ended and trips began.
+    //
+    // The word "Trips" comes off the children for the same reason "Leads"
+    // is not repeated in "Open" — the heading already said it.
+    <section className="section">
+      <div className="panelSectionTitle">Trips</div>
+      {/* Live and upcoming trips are what a BM acts on, so they stay open.
+          History collapses — a ten-trip guest is otherwise most of the panel. */}
+      <TripGroup rows={active} title="Active" defaultOpen />
+      <TripGroup rows={upcoming} title="Upcoming" defaultOpen />
+      <TripGroup rows={past} title="Past" />
+      <TripGroup rows={cancelled} title="Cancelled" />
     </section>
   );
 }
@@ -921,7 +988,7 @@ function TripGroup({ rows, title, defaultOpen = false }) {
   if (!rows?.length) return null;
 
   return (
-    <CollapsibleGroup title={title} count={rows.length} defaultOpen={defaultOpen}>
+    <CollapsibleGroup title={title} count={rows.length} defaultOpen={defaultOpen} nested>
       <div className="dataTable tripsTable">
         {rows.map((booking) => (
           <BookingRow key={booking.id} booking={booking} />

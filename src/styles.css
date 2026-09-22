@@ -402,6 +402,16 @@ body {
   color: var(--trtl-ink-2);
 }
 
+/* Two sentences to a block, with air between them. One 80-word paragraph is
+   a brick nobody reads while a guest is on the line. */
+.summaryBlock {
+  margin: 0;
+}
+
+.summaryBlock + .summaryBlock {
+  margin-top: 7px;
+}
+
 .sfStamp {
   color: var(--trtl-muted-2);
   font-size: 10.5px;
@@ -519,18 +529,16 @@ body {
 
 /* --------------------------------------------------------------- sections */
 
+/* Top-level sections are separated by a rule and real space. Leads, Trips,
+   Mailvio, Activity and Contact each get one, so the panel reads as five
+   blocks rather than a continuous ladder of toggles. Matches .activitySection
+   exactly — the two should never drift apart. */
 .section {
   border-top: 1px solid var(--trtl-line);
   display: grid;
   gap: 5px;
-  margin-top: 8px;
-  padding-top: 7px;
-}
-
-.tripsSection {
-  display: grid;
-  gap: 5px;
-  margin-top: 8px;
+  margin-top: 10px;
+  padding-top: 8px;
 }
 
 .section h2 {
@@ -667,16 +675,6 @@ body {
 }
 
 /* ------------------------------------------------------------ trip groups */
-
-.tripGroups {
-  display: grid;
-  gap: 6px;
-}
-
-.tripGroup {
-  display: grid;
-  gap: 3px;
-}
 
 .groupTitle {
   color: var(--trtl-ink-2);
@@ -1124,6 +1122,21 @@ body {
   justify-content: space-between;
 }
 
+.sectionTitleWithIcon {
+  align-items: center;
+  display: flex;
+  gap: 6px;
+}
+
+/* Green against the heading's ink, matching the arrow buttons. Used on
+   Contact alone — an icon on every heading marks nothing out. */
+.sectionIcon {
+  color: var(--trtl-green);
+  flex: 0 0 auto;
+  height: 13px;
+  width: 13px;
+}
+
 /* Section headings, enlarged from 10.5px — BMs found them hard to pick out
    while scanning. */
 .panelSectionTitle {
@@ -1153,8 +1166,20 @@ body {
 /* Sub-groups under a section heading — Open, Converted, Closed beneath
    Leads. Smaller and indented so the hierarchy is obvious rather than three
    headings of equal weight sitting in a row. */
+/* A hairline rule down the left, not just an indent. At 9px of padding alone
+   the nesting was too subtle to see, so Open/Converted/Closed and Past/
+   Cancelled read as one flat list of six sibling rows. The rule makes each
+   set visibly hang off its heading. */
 .collapsibleGroup.nested {
-  padding-left: 9px;
+  border-left: 1px solid var(--trtl-line);
+  margin-left: 2px;
+  padding-left: 10px;
+}
+
+/* Tighter between siblings in the same group than between groups, so the
+   spacing itself says which rows belong together. */
+.collapsibleGroup.nested + .collapsibleGroup.nested {
+  margin-top: 4px;
 }
 
 .activityToggle.nestedToggle {
