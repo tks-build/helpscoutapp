@@ -274,17 +274,22 @@ function SFCard({ customer, showEmail }) {
         </div>
       )}
 
+      {/* Generated summary first, and labelled. Unlabelled, it sat directly
+          under the About Guest note and read as a third paragraph of it —
+          which put the one piece of writing the section exists for behind
+          the BM's own note. */}
+      {sf.summary && (
+        <div className="sfNote sfGenerated">
+          <span className="label">Good to know</span>
+          <div className="plainText multiline">{sf.summary}</div>
+          {sf.summaryUpdated && <div className="sfStamp">Generated {sf.summaryUpdated}</div>}
+        </div>
+      )}
+
       {sf.aboutGuest && (
         <div className="sfNote">
           <span className="label">About guest</span>
           <div className="plainText multiline">{sf.aboutGuest}</div>
-        </div>
-      )}
-
-      {sf.summary && (
-        <div className="sfNote sfGenerated">
-          <div className="plainText multiline">{sf.summary}</div>
-          {sf.summaryUpdated && <div className="sfStamp">Generated {sf.summaryUpdated}</div>}
         </div>
       )}
     </section>

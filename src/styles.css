@@ -408,8 +408,11 @@ body {
   padding-top: 6px;
 }
 
+/* Reads as primary text now that it leads the card. The "Generated" stamp
+   underneath is what marks it as machine-written; greying the prose as well
+   made it look like a footnote to the note above it. */
 .sfGenerated .plainText {
-  color: var(--trtl-muted);
+  color: var(--trtl-ink-2);
 }
 
 .sfStamp {
