@@ -170,10 +170,10 @@ function ProfilePanel({ profile, showEmail, context }) {
     <section className="profilePanel">
       {flags.notAFit && <div className="alert">Not a Fit</div>}
 
-      {/* Order set by the BM team: SF and About Guest, then Leads, then
-          contact details. Most of them were scrolling straight past
-          everything to reach Leads, so it moved up rather than each person
-          rearranging the panel themselves.
+      {/* Order set by the BM team: SF and About Guest, then Leads. Most of
+          them were scrolling straight past everything to reach Leads, so it
+          moved up rather than each person rearranging the panel themselves.
+          Contact then moved to the foot of the panel, beside Calendly.
 
           Client Flag stays directly under SF regardless — it carries the
           dietary and medical warnings, and those should never sit below a
@@ -182,7 +182,6 @@ function ProfilePanel({ profile, showEmail, context }) {
       <FlagBlock flags={flags} />
 
       <LeadsTable leads={leads} />
-      <ContactCard customer={customer} />
       <TripsSection bookings={bookings} />
 
       <MailvioSubscriptions
@@ -196,6 +195,12 @@ function ProfilePanel({ profile, showEmail, context }) {
         context={context}
         crmUrl={customer?.crmActivityUrl || crmUrl(customer)}
       />
+
+      {/* Contact sits last, directly above the Calendly button. The two are
+          the same job — reach the guest — so they belong together, and a BM
+          who has scrolled the history is already at the bottom when they
+          decide to ring. */}
+      <ContactCard customer={customer} />
 
       <a className="primaryButton" href={customer?.calendlyUrl} rel="noreferrer" target="_blank">
         Calendly link

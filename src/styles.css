@@ -13,6 +13,9 @@
 :root {
   --trtl-ink: #1b211e;
   --trtl-ink-2: #3c443e;
+  /* Sits between ink-2 and muted. Used for sub-headings that must read as
+     subordinate to a section title without dropping to label grey. */
+  --trtl-ink-3: #565d53;
   --trtl-muted: #767a6f;
   --trtl-muted-2: #9a9e92;
 
@@ -256,8 +259,10 @@ body {
   margin-bottom: 5px;
 }
 
+/* Reads as a heading rather than an accent. The card is already unmistakably
+   green — border, ground and the repeat-guest chip all carry it. */
 .sfEyebrow {
-  color: var(--trtl-green);
+  color: var(--trtl-ink-2);
   margin-bottom: 0;
 }
 
@@ -350,7 +355,7 @@ body {
 }
 
 .touchLabel {
-  color: var(--trtl-muted);
+  color: var(--trtl-ink-2);
   font-size: 10px;
   font-weight: 700;
   letter-spacing: 0.06em;
@@ -535,8 +540,11 @@ body {
   margin: 0;
 }
 
+/* Same ink as the section headings. At --trtl-muted these sat lighter than
+   the values beneath them, so a BM scanning the card read the answers before
+   the questions. A label should be quieter in size, not in contrast. */
 .label {
-  color: var(--trtl-muted);
+  color: var(--trtl-ink-2);
   display: block;
   font-size: 10.5px;
   font-weight: 700;
@@ -1150,12 +1158,14 @@ body {
 }
 
 .activityToggle.nestedToggle {
-  color: var(--trtl-muted);
+  color: var(--trtl-ink-3);
   font-size: 10.5px;
 }
 
+/* Darkens on hover rather than turning green. The green shift read as a link
+   to somewhere else, when all these do is open the group below them. */
 .activityToggle:hover {
-  color: var(--trtl-green);
+  color: var(--trtl-ink);
 }
 
 .activityChevron {
