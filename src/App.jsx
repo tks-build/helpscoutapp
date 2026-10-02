@@ -1,6 +1,8 @@
 import HelpScout from '@helpscout/javascript-sdk';
 import { DefaultStyle, Heading, Spinner, Text, useSetAppHeight } from '@helpscout/ui-kit';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import LeadForm, { EnquiryCard } from './LeadForm.jsx';
+import { apiFetch, startSession } from './api.js';
 
 /**
  * Activity log rollout flags.
@@ -28,23 +30,53 @@ const ACTIVITY_COPY_REPLY_ENABLED = false;
  */
 const PENDING_DETAILS_ENABLED = false;
 
+/** Help Scout tags website enquiries with this; it decides when the form in the email is read. */
+const ENQUIRY_TAG = 'trip-enquiry';
+
+/** Marks "nothing shown yet", which is different from "shown for no conversation" (local testing). */
+const NOTHING_SHOWN = Symbol('nothing shown');
+
 function App() {
   const appRef = useSetAppHeight();
   const [context, setContext] = useState(null);
   const [customerData, setCustomerData] = useState(null);
   const [status, setStatus] = useState('loading-context');
   const [error, setError] = useState('');
+  // The website enquiry form in this conversation, if there is one.
+  const [enquiry, setEnquiry] = useState(null);
+  // Addresses to look up beyond the Help Scout profile's own.
+  const [extraEmails, setExtraEmails] = useState([]);
+  const [refreshKey, setRefreshKey] = useState(0);
+  const refreshTimers = useRef([]);
+  const shownFor = useRef(NOTHING_SHOWN);
 
-  const emails = useMemo(() => getCustomerEmails(context?.customer), [context]);
+  const conversationId = context?.conversation?.id ?? null;
+  const isTripEnquiry = (context?.conversation?.tags || []).some((item) => (item?.tag || item) === ENQUIRY_TAG);
+
+  // A returning guest often writes from a different address than the one on
+  // file, so the lookup covers the profile's emails AND the one typed into
+  // the enquiry form.
+  const emails = useMemo(
+    () => [...new Set([...getCustomerEmails(context?.customer), ...(enquiry?.email ? [enquiry.email] : []), ...extraEmails])],
+    [context, enquiry, extraEmails],
+  );
   const emailQuery = emails.join(',');
   const mailboxId = context?.conversation?.mailboxId ?? null;
 
   useEffect(() => {
     let active = true;
-    const localEmail = new URLSearchParams(window.location.search).get('email');
+    // Local testing outside Help Scout: ?email=…[&conversationId=…&tag=trip-enquiry]
+    const query = new URLSearchParams(window.location.search);
+    const localEmail = query.get('email');
 
     if (localEmail) {
-      setContext({ customer: { email: localEmail } });
+      const localConversation = Number(query.get('conversationId')) || null;
+      setContext({
+        customer: { email: localEmail },
+        conversation: localConversation
+          ? { id: localConversation, tags: query.getAll('tag').map((tag) => ({ tag })) }
+          : undefined,
+      });
       setStatus('ready');
       return () => {
         active = false;
@@ -80,12 +112,18 @@ function App() {
     }
 
     let active = true;
-    setStatus('loading-airtable');
-    setError('');
+    // A re-check for the conversation already on screen — after a lead is
+    // submitted, or when the enquiry form adds a second address — happens
+    // quietly. Swapping to the spinner would unmount the form mid-use.
+    const quiet = shownFor.current === conversationId;
+    if (!quiet) {
+      setStatus('loading-airtable');
+      setError('');
+    }
 
     const params = new URLSearchParams({ email: emailQuery });
     if (mailboxId) params.set('mailboxId', String(mailboxId));
-    fetch(`/api/airtable?${params}`)
+    apiFetch(`/api/airtable?${params}`)
       .then(async (response) => {
         const body = await response.json();
         if (!response.ok) {
@@ -95,11 +133,13 @@ function App() {
       })
       .then((body) => {
         if (!active) return;
+        shownFor.current = conversationId;
         setCustomerData(body);
         setStatus('ready');
+        setError('');
       })
       .catch((lookupError) => {
-        if (!active) return;
+        if (!active || quiet) return;
         setCustomerData(null);
         setStatus('airtable-error');
         setError(lookupError.message);
@@ -108,11 +148,57 @@ function App() {
     return () => {
       active = false;
     };
-  }, [emailQuery, mailboxId]);
+  }, [emailQuery, mailboxId, conversationId, refreshKey]);
 
   const record = customerData?.records?.[0];
-  const customer = customerData?.customer;
-  const fields = customer?.fields || record?.fields || {};
+  const noMatch = status === 'ready' && Boolean(emailQuery) && !record;
+
+  // The enquiry form lives in the email body, which only the Mailbox API can
+  // read. Fetched for conversations tagged as enquiries, and for guests with
+  // no CRM record (where it prefills the new-customer form) — not for every
+  // conversation, to stay well inside Help Scout's API rate limit.
+  const wantsEnquiry = Boolean(conversationId) && (isTripEnquiry || noMatch);
+  useEffect(() => {
+    if (!wantsEnquiry) return undefined;
+
+    let active = true;
+    startSession().then((ok) => {
+      if (!ok || !active) return;
+      apiFetch(`/api/enquiry?conversationId=${conversationId}`)
+        .then((response) => (response.ok ? response.json() : null))
+        .then((body) => {
+          if (active && body?.enquiry) setEnquiry(body.enquiry);
+        })
+        .catch(() => {});
+    });
+
+    return () => {
+      active = false;
+    };
+  }, [wantsEnquiry, conversationId]);
+
+  // A different conversation is a different guest: drop everything held for
+  // the last one.
+  useEffect(() => {
+    setEnquiry(null);
+    setExtraEmails([]);
+    refreshTimers.current.forEach(clearTimeout);
+    refreshTimers.current = [];
+    return () => refreshTimers.current.forEach(clearTimeout);
+  }, [conversationId]);
+
+  // The Zaps take a few seconds to write to Airtable. Look again a handful of
+  // times so the new record or lead appears without a manual reload.
+  const refreshAfterSubmit = useCallback((action) => {
+    refreshTimers.current.forEach(clearTimeout);
+    const delays = action === 'create' ? [4000, 9000, 16000, 26000] : [7000, 15000];
+    refreshTimers.current = delays.map((ms) => setTimeout(() => setRefreshKey((key) => key + 1), ms));
+  }, []);
+
+  const lookUpEmail = useCallback((email) => {
+    const address = String(email || '').trim().toLowerCase();
+    if (address) setExtraEmails((current) => [...new Set([...current, address])]);
+  }, []);
 
   return (
     <main className="app" ref={appRef}>
@@ -125,15 +211,21 @@ function App() {
       ) : !emailQuery ? (
         <Message title="No customer email" text="This Help Scout conversation does not include an email address yet." />
       ) : !record ? (
-        <Message title="No Airtable match" text="No customer record was found for this email address." />
+        <NewCustomerPanel
+          emails={emails}
+          enquiry={enquiry}
+          context={context}
+          onSubmitted={refreshAfterSubmit}
+          onExistingCustomer={lookUpEmail}
+        />
       ) : (
-        <HomePage customerData={customerData} context={context} />
+        <HomePage customerData={customerData} context={context} enquiry={enquiry} onLeadSubmitted={refreshAfterSubmit} />
       )}
     </main>
   );
 }
 
-function HomePage({ customerData, context }) {
+function HomePage({ customerData, context, enquiry, onLeadSubmitted }) {
   const profiles = customerData?.profiles?.length
     ? customerData.profiles
     : [{ customer: customerData.customer, leads: customerData.leads, bookings: customerData.bookings }];
@@ -151,13 +243,18 @@ function HomePage({ customerData, context }) {
           profile={profile}
           showEmail={profiles.length > 1}
           context={context}
+          // The enquiry belongs to the conversation, not to each record, so
+          // it is shown once — on the first (most active) profile.
+          enquiry={index === 0 ? enquiry : null}
+          prefill={enquiry}
+          onLeadSubmitted={onLeadSubmitted}
         />
       ))}
     </>
   );
 }
 
-function ProfilePanel({ profile, showEmail, context }) {
+function ProfilePanel({ profile, showEmail, context, enquiry, prefill, onLeadSubmitted }) {
   const customer = profile.customer;
   const fields = customer?.fields || {};
   // The API now shapes these. Fall back to raw fields so the panel still
@@ -180,8 +277,10 @@ function ProfilePanel({ profile, showEmail, context }) {
           fold. */}
       <SFCard customer={customer} showEmail={showEmail} />
       <FlagBlock flags={flags} />
+      <EnquiryCard enquiry={enquiry} />
 
       <LeadsTable leads={leads} />
+      <AddLead customer={customer} enquiry={prefill} context={context} onSubmitted={onLeadSubmitted} />
       <TripsSection bookings={bookings} />
 
       <MailvioSubscriptions
@@ -205,6 +304,47 @@ function ProfilePanel({ profile, showEmail, context }) {
       <a className="primaryButton" href={customer?.calendlyUrl} rel="noreferrer" target="_blank">
         Calendly link
       </a>
+    </section>
+  );
+}
+
+/**
+ * Shown when the guest has no CRM record: the Extractor extension's
+ * "New customer!" form, prefilled from the enquiry and the Help Scout profile.
+ */
+function NewCustomerPanel({ emails, enquiry, context, onSubmitted, onExistingCustomer }) {
+  return (
+    <section className="profilePanel">
+      <div className="newCustomerHead">
+        <Heading level="h2">New customer</Heading>
+        <Text>No customer record was found for {emails.join(' or ')}.</Text>
+      </div>
+      <EnquiryCard enquiry={enquiry} />
+      <LeadForm
+        enquiry={enquiry}
+        context={context}
+        onSubmitted={onSubmitted}
+        onExistingCustomer={onExistingCustomer}
+      />
+    </section>
+  );
+}
+
+/**
+ * The same form for a guest who already has a record: update their details
+ * and add a lead. Closed by default — most conversations do not need it, and
+ * its dropdowns cost three Airtable requests to fill.
+ */
+function AddLead({ customer, enquiry, context, onSubmitted }) {
+  const [open, setOpen] = useState(false);
+
+  return (
+    <section className="section">
+      <button className="activityToggle" onClick={() => setOpen(!open)} type="button">
+        <span className="activityChevron">{open ? '▲' : '▼'}</span>
+        Add lead / update details
+      </button>
+      {open && <LeadForm customer={customer} enquiry={enquiry} context={context} onSubmitted={onSubmitted} />}
     </section>
   );
 }
@@ -347,8 +487,8 @@ function splitIntoBlocks(text, perBlock = 2) {
   if (!normalised) return [];
 
   const sentences = normalised
-    .replace(/([.!?])\s+(?=["'(‘“]?[A-Z])/g, '$1 ')
-    .split(' ')
+    .replace(/([.!?])\s+(?=["'(‘“]?[A-Z])/g, '$1\u0000')
+    .split('\u0000')
     .map((sentence) => sentence.trim())
     .filter(Boolean);
 
@@ -539,7 +679,7 @@ function MailvioSubscriptions({ email, context }) {
       const params = new URLSearchParams({ email });
       if (mailboxId) params.set('mailboxId', String(mailboxId));
 
-      const response = await fetch(`/api/mailvio?${params}`);
+      const response = await apiFetch(`/api/mailvio?${params}`);
       const payload = await response.json();
       if (!response.ok) throw new Error(payload.details || payload.error || 'Failed');
 
@@ -562,7 +702,7 @@ function MailvioSubscriptions({ email, context }) {
     setError('');
 
     try {
-      const response = await fetch('/api/mailvio', {
+      const response = await apiFetch('/api/mailvio', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -740,7 +880,7 @@ function ActivityLog({ customerId, customerEmail, context, crmUrl: crmLink }) {
     if (customerId) params.set('customerRef', customerId);
     if (customerEmail) params.set('email', customerEmail);
 
-    fetch(`/api/activity?${params}`)
+    apiFetch(`/api/activity?${params}`)
       .then((response) => response.json())
       .then((payload) => {
         if (!active) return;
@@ -767,7 +907,7 @@ function ActivityLog({ customerId, customerEmail, context, crmUrl: crmLink }) {
 
     setStatus('saving');
     try {
-      const res = await fetch('/api/activity', {
+      const res = await apiFetch('/api/activity', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -797,7 +937,7 @@ function ActivityLog({ customerId, customerEmail, context, crmUrl: crmLink }) {
     if (!conversationId) return;
     setStatus('fetching');
     try {
-      const res = await fetch(`/api/helpscout?conversationId=${conversationId}`);
+      const res = await apiFetch(`/api/helpscout?conversationId=${conversationId}`);
       const payload = await res.json();
       if (!res.ok) throw new Error(payload.details || payload.error || 'Failed');
       if (!payload.reply) {
@@ -1010,7 +1150,7 @@ function NotesEditor({ recordId, recordType, initialNotes, placeholder }) {
   async function handleSave() {
     setSaveStatus('saving');
     try {
-      const res = await fetch('/api/airtable', {
+      const res = await apiFetch('/api/airtable', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ recordId, recordType, notes }),

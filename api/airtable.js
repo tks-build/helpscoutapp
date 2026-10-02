@@ -1,4 +1,5 @@
 import Airtable from 'airtable';
+import { requireSessionIfEnabled } from '../lib/session.js';
 
 const {
   AIRTABLE_API_KEY,
@@ -196,6 +197,8 @@ function getLeadGroup(status) {
 }
 
 export default async function handler(req, res) {
+  // No-op until REQUIRE_SESSION=true is set in Vercel. See lib/session.js.
+  if (!requireSessionIfEnabled(req, res)) return undefined;
   if (req.method === 'POST') {
     const { bookingId, recordId, recordType, notes } = req.body || {};
 

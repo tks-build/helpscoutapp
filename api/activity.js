@@ -14,12 +14,16 @@
  *   SUPABASE_SERVICE_ROLE_KEY   (server only — never expose to the browser)
  */
 
+import { requireSessionIfEnabled } from '../lib/session.js';
+
 const { SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY } = process.env;
 
 const TABLE = 'activity_entries';
 const SOURCE = 'helpscout';
 
 export default async function handler(req, res) {
+  // No-op until REQUIRE_SESSION=true is set in Vercel. See lib/session.js.
+  if (!requireSessionIfEnabled(req, res)) return undefined;
   if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
     return sendJson(res, 501, {
       error: 'Activity store is not configured',

@@ -1285,3 +1285,278 @@ body {
   gap: 8px;
   padding: 16px 0;
 }
+
+/* ---------------------------------------------------- lead form & enquiry */
+
+/* The Extractor extension's form, restyled to sit inside the panel. Inputs
+   are fixed-height and never resizable: anything that changes the app's
+   height while the mouse moves starts the resize loop described above. */
+
+.newCustomerHead {
+  display: grid;
+  gap: 2px;
+  padding: 10px 0 6px;
+}
+
+.enquiryCard {
+  background: var(--trtl-surface-2);
+  border: 1px solid var(--trtl-line);
+  border-radius: var(--trtl-radius);
+  display: grid;
+  gap: 3px;
+  margin-top: 6px;
+  padding: 7px 9px;
+}
+
+.enquiryRow {
+  display: grid;
+  font-size: 12.5px;
+  gap: 8px;
+  grid-template-columns: 84px minmax(0, 1fr);
+}
+
+.enquiryLabel {
+  color: var(--trtl-muted);
+}
+
+.enquiryValue {
+  color: var(--trtl-ink);
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.enquiryMessage {
+  border-top: 1px solid var(--trtl-line-soft);
+  color: var(--trtl-ink-2);
+  font-size: 12.5px;
+  line-height: 1.4;
+  margin: 3px 0 0;
+  overflow-wrap: anywhere;
+  padding-top: 5px;
+  white-space: pre-line;
+}
+
+.leadForm {
+  display: grid;
+  gap: 7px;
+  margin-top: 6px;
+}
+
+.leadGrid {
+  display: grid;
+  gap: 7px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.leadField {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.leadField.wide {
+  grid-column: 1 / -1;
+}
+
+/* Under 300px two columns leave too little room to read a name. */
+@container (max-width: 300px) {
+  .leadGrid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.leadLabel {
+  align-items: baseline;
+  color: var(--trtl-ink-2);
+  display: flex;
+  font-size: 10.5px;
+  font-weight: 700;
+  gap: 6px;
+  justify-content: space-between;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+}
+
+.leadError {
+  color: var(--trtl-red);
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.leadInput {
+  background: var(--trtl-surface);
+  border: 1px solid var(--trtl-line);
+  border-radius: var(--trtl-radius-sm);
+  box-sizing: border-box;
+  color: var(--trtl-ink);
+  font-family: inherit;
+  font-size: 13px;
+  height: 30px;
+  min-width: 0;
+  padding: 4px 8px;
+  width: 100%;
+}
+
+.leadInput:focus {
+  border-color: var(--trtl-teal);
+  outline: 1px solid var(--trtl-teal);
+  outline-offset: -1px;
+}
+
+.leadInput.invalid {
+  border-color: var(--trtl-red);
+}
+
+.leadSuggest {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+.leadSuggestLabel,
+.leadMuted {
+  color: var(--trtl-muted);
+  font-size: 11.5px;
+}
+
+.leadChip {
+  background: var(--trtl-green-soft);
+  border: 1px solid var(--trtl-green-line);
+  border-radius: 999px;
+  color: var(--trtl-green);
+  cursor: pointer;
+  font: inherit;
+  font-size: 11.5px;
+  font-weight: 600;
+  padding: 2px 9px;
+  text-align: left;
+}
+
+.leadChip:hover {
+  background: var(--trtl-green);
+  border-color: var(--trtl-green);
+  color: #ffffff;
+}
+
+.leadTagsToggle {
+  align-items: baseline;
+  background: var(--trtl-surface);
+  border: 1px solid var(--trtl-line);
+  border-radius: var(--trtl-radius-sm);
+  cursor: pointer;
+  display: grid;
+  font: inherit;
+  gap: 8px;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  min-height: 30px;
+  padding: 5px 8px;
+  text-align: left;
+  width: 100%;
+}
+
+.leadTagsSummary {
+  color: var(--trtl-ink);
+  font-size: 12.5px;
+  overflow-wrap: anywhere;
+}
+
+.leadTags {
+  border: 1px solid var(--trtl-line);
+  border-radius: var(--trtl-radius-sm);
+  display: grid;
+  gap: 5px;
+  margin-top: 3px;
+  padding: 6px;
+}
+
+/* Scrolls inside a fixed box, so ticking tags never changes the app height. */
+.leadTagList {
+  display: grid;
+  gap: 1px;
+  max-height: 170px;
+  overflow-y: auto;
+}
+
+.leadTagOption {
+  align-items: center;
+  border-radius: 4px;
+  cursor: pointer;
+  display: flex;
+  font-size: 12.5px;
+  gap: 7px;
+  padding: 3px 4px;
+}
+
+.leadTagOption:hover {
+  background: var(--trtl-green-soft);
+}
+
+.leadTagOption input {
+  accent-color: var(--trtl-green);
+  margin: 0;
+}
+
+.leadSubmit {
+  margin-top: 2px;
+}
+
+.leadSubmit:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+
+.leadNotice {
+  background: var(--trtl-surface-2);
+  border: 1px solid var(--trtl-line);
+  border-radius: var(--trtl-radius-sm);
+  color: var(--trtl-ink-2);
+  font-size: 12px;
+  line-height: 1.4;
+  margin-top: 6px;
+  overflow-wrap: anywhere;
+  padding: 6px 8px;
+}
+
+.leadNoticeOk {
+  background: var(--trtl-green-soft);
+  border-color: var(--trtl-green-line);
+  color: var(--trtl-green);
+  font-weight: 600;
+}
+
+.leadNoticeWarn {
+  background: var(--trtl-amber-bg);
+  border-color: var(--trtl-amber-line);
+  color: var(--trtl-amber);
+}
+
+.leadNoticeError {
+  background: var(--trtl-red-bg);
+  border-color: var(--trtl-red-line);
+  color: var(--trtl-red);
+}
+
+.leadLinkButton {
+  background: none;
+  border: 0;
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
+  font-weight: 700;
+  padding: 0;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.leadPayload {
+  background: var(--trtl-surface);
+  border: 1px solid var(--trtl-line-soft);
+  border-radius: 4px;
+  font-size: 11px;
+  margin: 5px 0 0;
+  max-height: 220px;
+  overflow: auto;
+  padding: 6px;
+  white-space: pre-wrap;
+}

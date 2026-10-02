@@ -13,6 +13,8 @@
  *   MAILVIO_BASE_URL  optional override, defaults to the documented base
  */
 
+import { requireSessionIfEnabled } from '../lib/session.js';
+
 const { MAILVIO_API_KEY, MAILVIO_API_KEYS, MAILVIO_BASE_URL } = process.env;
 
 const BASE_URL = MAILVIO_BASE_URL || 'https://apiv2.mailvio.com';
@@ -26,6 +28,8 @@ try {
 }
 
 export default async function handler(req, res) {
+  // No-op until REQUIRE_SESSION=true is set in Vercel. See lib/session.js.
+  if (!requireSessionIfEnabled(req, res)) return undefined;
   const mailboxId = String(req.query.mailboxId || readBody(req).mailboxId || '');
   const apiKey = resolveApiKey(mailboxId);
 

@@ -16,6 +16,8 @@
  *   HELPSCOUT_APP_SECRET
  */
 
+import { requireSessionIfEnabled } from '../lib/session.js';
+
 const TOKEN_URL = 'https://api.helpscout.net/v2/oauth2/token';
 const API_BASE = 'https://api.helpscout.net/v2';
 
@@ -27,6 +29,8 @@ let cachedToken = null;
 let cachedTokenExpiry = 0;
 
 export default async function handler(req, res) {
+  // No-op until REQUIRE_SESSION=true is set in Vercel. See lib/session.js.
+  if (!requireSessionIfEnabled(req, res)) return undefined;
   if (req.method !== 'GET') {
     return sendJson(res, 405, { error: 'Method Not Allowed' });
   }
