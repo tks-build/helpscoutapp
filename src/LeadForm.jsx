@@ -1,25 +1,5 @@
-import { useEffect, useId, useMemo, useRef, useState } from 'react';
+import { useEffect, useId, useMemo, useState } from 'react';
 import { apiFetch, sessionFailure, startSession } from './api.js';
-
-// Remembered per browser, so a BM who is not matched by name picks
-// themselves once rather than on every lead.
-const LAST_TEAM_CONTACT = 'leadForm.lastTeamContact';
-
-function recall(key) {
-  try {
-    return localStorage.getItem(key) || '';
-  } catch {
-    return '';
-  }
-}
-
-function remember(key, value) {
-  try {
-    localStorage.setItem(key, value);
-  } catch {
-    // Storage blocked: the default simply is not remembered.
-  }
-}
 
 /**
  * Add or update a customer and lead — the HelpScout Extractor extension's
@@ -140,26 +120,9 @@ export default function LeadForm({ customer, enquiry, context, onSubmitted, onEx
     };
   }, []);
 
-  // Team contact starts filled in — the old extension made BMs pick it on
-  // every submission. Whoever is signed in to Help Scout, matched by full
-  // name, then by first name if only one booking manager has it; failing
-  // both, the contact last chosen on this browser. Runs once per form, so a
-  // BM can still clear it.
-  const defaulted = useRef(false);
-  useEffect(() => {
-    if (!options || defaulted.current) return;
-    defaulted.current = true;
-
-    const first = text(context?.user?.firstName).toLowerCase();
-    const full = [first, text(context?.user?.lastName).toLowerCase()].filter(Boolean).join(' ');
-    const members = options.teamMembers;
-    const byFull = full ? members.find((member) => member.name.toLowerCase() === full) : null;
-    const byFirst = first ? members.filter((member) => member.name.toLowerCase().split(/\s+/)[0] === first) : [];
-    const remembered = members.find((member) => member.id === recall(LAST_TEAM_CONTACT));
-
-    const pick = byFull || (byFirst.length === 1 ? byFirst[0] : null) || remembered;
-    if (pick) setTeamContactId(pick.id);
-  }, [options, context]);
+  // Team contact and Status start empty and are required, as in the old
+  // extension — a deliberate choice on every submission (agreed with the
+  // team, 2026-10-03). Do not default them.
 
   const trip = useMemo(
     () => options?.trips.find((item) => item.name === tripName.trim()) || null,
@@ -210,7 +173,6 @@ export default function LeadForm({ customer, enquiry, context, onSubmitted, onEx
       }
       if (!response.ok) throw new Error(body.error || 'The lead could not be sent.');
 
-      remember(LAST_TEAM_CONTACT, teamContactId);
       setSubmitState({ phase: 'done', action: body.action, dryRun: body.dryRun, payload: body.payload });
       if (!body.dryRun) onSubmitted?.(body.action);
     } catch (error) {
@@ -324,7 +286,7 @@ export default function LeadForm({ customer, enquiry, context, onSubmitted, onEx
       </div>
 
       <button className="primaryButton leadSubmit" disabled={submitState.phase === 'sending'} type="submit">
-        {submitState.phase === 'sending' ? 'Sending…' : isUpdate ? 'Update customer & add lead' : 'Add customer & lead'}
+        {submitState.phase === 'sending' ? 'Sending…' : isUpdate ? 'Update customer' : 'Add customer & lead'}
       </button>
       {options.dryRun ? <div className="leadNotice leadNoticeWarn">Test mode: nothing is sent to Zapier.</div> : null}
 
@@ -381,7 +343,7 @@ function SubmitResult({ state, onExistingCustomer }) {
       <div className="leadNotice leadNoticeOk">
         {state.action === 'create'
           ? 'Customer sent to the CRM. Their record will appear here in a few seconds.'
-          : 'Update sent to the CRM. The new lead will appear here shortly.'}
+          : 'Update sent to the CRM. The changes will show here in a few seconds.'}
       </div>
     );
   }

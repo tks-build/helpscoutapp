@@ -331,8 +331,8 @@ function NewCustomerPanel({ emails, enquiry, context, onSubmitted, onExistingCus
 }
 
 /**
- * The same form for a guest who already has a record: update their details
- * and add a lead. Closed by default — most conversations do not need it, and
+ * The same form for a guest who already has a record: update their details.
+ * Closed by default — most conversations do not need it, and
  * its dropdowns cost three Airtable requests to fill.
  */
 function AddLead({ customer, enquiry, context, onSubmitted }) {
@@ -342,7 +342,7 @@ function AddLead({ customer, enquiry, context, onSubmitted }) {
     <section className="section">
       <button className="activityToggle" onClick={() => setOpen(!open)} type="button">
         <span className="activityChevron">{open ? '▲' : '▼'}</span>
-        Add lead / update details
+        Update details
       </button>
       {open && <LeadForm customer={customer} enquiry={enquiry} context={context} onSubmitted={onSubmitted} />}
     </section>
