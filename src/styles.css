@@ -1407,36 +1407,9 @@ body {
   border-color: var(--trtl-red);
 }
 
-.leadSuggest {
-  align-items: center;
-  display: flex;
-  flex-wrap: wrap;
-  gap: 5px;
-}
-
-.leadSuggestLabel,
 .leadMuted {
   color: var(--trtl-muted);
   font-size: 11.5px;
-}
-
-.leadChip {
-  background: var(--trtl-green-soft);
-  border: 1px solid var(--trtl-green-line);
-  border-radius: 999px;
-  color: var(--trtl-green);
-  cursor: pointer;
-  font: inherit;
-  font-size: 11.5px;
-  font-weight: 600;
-  padding: 2px 9px;
-  text-align: left;
-}
-
-.leadChip:hover {
-  background: var(--trtl-green);
-  border-color: var(--trtl-green);
-  color: #ffffff;
 }
 
 .leadTagsToggle {

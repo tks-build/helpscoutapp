@@ -1,6 +1,5 @@
 import { useEffect, useId, useMemo, useState } from 'react';
 import { apiFetch, sessionFailure, startSession } from './api.js';
-import { suggestTrips } from './tripMatch.js';
 
 /**
  * Add or update a customer and lead — the HelpScout Extractor extension's
@@ -13,10 +12,6 @@ import { suggestTrips } from './tripMatch.js';
  *
  * Fields, required fields and status list are the extension's, unchanged.
  */
-
-// Trip suggestions shown as buttons. More than this crowds a narrow sidebar;
-// the rest are a few keystrokes away in the Trip field's own search.
-const MAX_TRIP_CHIPS = 4;
 
 // One fetch of the dropdown contents per panel load, shared by every form.
 let optionsRequest = null;
@@ -139,12 +134,6 @@ export default function LeadForm({ customer, enquiry, context, onSubmitted, onEx
     [options, tripName],
   );
 
-  // Trips whose title matches what the guest typed on the enquiry form.
-  const tripSuggestions = useMemo(
-    () => (options && !trip ? suggestTrips(options.trips, enquiry?.trip) : []),
-    [options, enquiry, trip],
-  );
-
   const errors = {
     email: !values.email.trim(),
     trip: Boolean(tripName.trim()) && !trip,
@@ -242,21 +231,6 @@ export default function LeadForm({ customer, enquiry, context, onSubmitted, onEx
           {options.trips.map((item) => <option key={item.id} value={item.name} />)}
         </datalist>
       </label>
-      {tripSuggestions.length ? (
-        <div className="leadSuggest">
-          <span className="leadSuggestLabel">Asked about “{text(enquiry?.trip)}”:</span>
-          {tripSuggestions.slice(0, MAX_TRIP_CHIPS).map((item) => (
-            <button className="leadChip" key={item.id} onClick={() => setTripName(item.name)} type="button">
-              {item.name}
-            </button>
-          ))}
-          {tripSuggestions.length > MAX_TRIP_CHIPS ? (
-            <span className="leadSuggestLabel">
-              +{tripSuggestions.length - MAX_TRIP_CHIPS} more — type in Trip to see them all
-            </span>
-          ) : null}
-        </div>
-      ) : null}
 
       <div className="leadField">
         <button className="leadTagsToggle" onClick={() => setTagsOpen(!tagsOpen)} type="button">
