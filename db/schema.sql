@@ -6,7 +6,9 @@
 -- to 5 requests per second per base at every pricing tier.
 --
 -- Airtable will hold a rolling display cache for Stacker. This table is the
--- truth, and TRTL reads it directly when it arrives.
+-- truth until TRTL is ready — a bridge, not the destination. The log's final
+-- home is TRTL; moving it there is a one-off copy, and every row carries the
+-- guest's email so it can be re-keyed to a TRTL guest id.
 
 create extension if not exists "pgcrypto";
 
@@ -75,3 +77,9 @@ create unique index if not exists activity_source_ref_idx
 -- Only the service role touches this table. The panel reaches it through a
 -- server route; no key ever goes to the browser.
 alter table activity_entries enable row level security;
+
+-- The project is created with "Automatically expose new tables" OFF, as
+-- Supabase recommends, so no Data API role has access by default. The
+-- server's key gets exactly what /api/activity uses: read, add, and mark
+-- deleted. No DELETE — entries are soft-deleted, never removed.
+grant select, insert, update on table public.activity_entries to service_role;

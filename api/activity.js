@@ -11,10 +11,13 @@
  *
  * Requires:
  *   SUPABASE_URL
- *   SUPABASE_SERVICE_ROLE_KEY   (server only — never expose to the browser)
+ *   SUPABASE_SERVICE_ROLE_KEY   a secret key (sb_secret_…) or the legacy
+ *                               service_role key. Server only — never expose
+ *                               to the browser.
  */
 
 import { requireSessionIfEnabled } from '../lib/session.js';
+import { supabaseAuthHeaders } from '../lib/supabaseAuth.js';
 
 const { SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY } = process.env;
 
@@ -140,8 +143,8 @@ async function supabase(path, options = {}) {
   const response = await fetch(`${SUPABASE_URL}/rest/v1${path}`, {
     ...options,
     headers: {
-      apikey: SUPABASE_SERVICE_ROLE_KEY,
-      Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
+      // Secret keys must not go in an Authorization header; see lib/supabaseAuth.js.
+      ...supabaseAuthHeaders(SUPABASE_SERVICE_ROLE_KEY),
       'Content-Type': 'application/json',
       ...(options.headers || {}),
     },
