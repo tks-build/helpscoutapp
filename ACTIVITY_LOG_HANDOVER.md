@@ -18,7 +18,7 @@ This document is meant to be complete. If something here is unclear or turns out
 
   It is **switched off**, so BMs still use Stacker.
 - **Where the data lives today:** a **Supabase** (hosted Postgres) project, set up and verified from a preview deployment on 27 Oct 2026. It is empty.
-- **Where it should end up:** Kat's understanding is that the log should ultimately live **in TRTL's own data**, owned by TRTL, and that TRTL is a front end over the **Airtable base**. If that's right, the final home is effectively **Airtable**, which has limits that matter here (see §4). Settling this is the first job (§3).
+- **Where it should end up:** not decided yet; settling this is the first job (§3). If the answer turns out to be Airtable, §4 explains the limits that matter.
 - **What's left:**
   1. Answer the questions in §3.
   2. Choose the storage option in §4.
@@ -39,7 +39,7 @@ This document is meant to be complete. If something here is unclear or turns out
 
 Every row stores the guest's **email** as well as their Airtable record ID, so rows can be re-linked to TRTL guest IDs.
 
-**New information (Oct 2026, to be confirmed by you):** TRTL is a front end over the Airtable base. That reopens the question of where the log lives. See §3 and §4.
+**Still open:** what TRTL is built on decides where the log lives. See §3 and §4.
 
 **What the team was told** (Kat's earlier update to colleagues):
 - getting a new log recording takes a few days;
@@ -56,16 +56,14 @@ Please answer these in this file, under each question, or send them to Kat.
 ### Where the log ends up
 
 1. **What is TRTL built on?** Does it have its own database (Postgres, Supabase, something else), or is it a front end over the Airtable base? TRTL's header once read "Airtable · Leatherback Bookings", so I'm not sure.
-   > *Kat's answer (Oct 2026):* Airtable base. *Please confirm, including whether TRTL has any database or server of its own beyond Airtable.*
 
 2. **Where should the Activity Log live permanently?**
    - (a) inside TRTL's own database, owned by TRTL; or
    - (b) staying in this Supabase project, with TRTL reading and writing it.
-   > *Kat's answer:* ideally (a), inside TRTL's own database, owned by TRTL. If TRTL's data is Airtable, see §4 before deciding.
 
-3. **If (a): when can TRTL accept entries, and how?** For example, direct database access, an API from TRTL, or a one-off import Mat runs himself. If that's soon, we might send new entries straight to TRTL and use Supabase only for history.
-   > *Kat's note:* you'd like TRTL to accept entries very soon.
-   >
+   If TRTL's data is the Airtable base, read §4 before deciding.
+
+3. **If (a): when can TRTL accept entries, and how?** For example, direct database access, an API from TRTL, or a one-off import. If that's soon, we might send new entries straight to TRTL and use Supabase only for history.
    > *What "how" means:* the route a new note takes to reach TRTL's data.
    > 1. **Direct database access:** our server writes each note straight into the database TRTL reads. If that's Airtable, this means writing to an Airtable table.
    > 2. **An API from TRTL:** TRTL offers a "send me a note for guest X" address, and our panel posts to it. TRTL decides how and where it's stored.
@@ -83,17 +81,36 @@ These decide between options A and B in §4.
 ### Shape of the data
 
 4. **How does TRTL identify a guest?** By the Airtable record ID (`rec…`), or by its own IDs? Is the guest's email reliable enough to match on?
-5. **Does Mat want specific column names or types?** `db/schema.sql` shows the current design; adopt it as-is, or match TRTL's naming now.
+5. **Are specific column names or types needed?** `db/schema.sql` shows the current design; adopt it as-is, or match TRTL's naming now.
 6. **Will people also write notes inside TRTL** that need to appear in the same log, e.g. calls, emails or status changes?
 
 ### Ownership and hosting
 
-7. **Who should own the Supabase project and the Vercel project long term:** a company account, Mat, or you? The Supabase project is in a US region to match where Vercel runs the panel's server code. Is US hosting OK, or does Mat want Australia? (Airtable is already US-hosted.)
+7. **Ownership and hosting.**
+   - **(a) Who should own the Supabase project and the Vercel project long term:** a company account, or you?
+   - **(b) Should the Supabase project stay in the US, or move to Australia?** Your call. Here's what we know.
+     - **Where things are now:**
+       - The Supabase project is in a US region, chosen to sit next to where Vercel runs the panel's server code.
+       - **Airtable** is a US-hosted service: storing bases on its own US servers is how Airtable runs as standard, not a setting chosen in our projects. That covers the whole base, guest data included.
+       - **Help Scout** is also US-hosted.
+     - **Speed:** what matters is the distance between Vercel's servers and the database, not where the BMs are.
+       - The panel's server code calls Airtable about six times every time a conversation opens, so it's best kept in the US, next to Airtable.
+       - Moving **only** Supabase to Sydney would make every Activity Log request cross the Pacific.
+       - Moving **both** Supabase and Vercel's server code to Sydney would make every Airtable call cross the Pacific instead, slowing the whole panel.
+     - **Privacy and law:**
+       - Australian privacy law generally allows personal data to be stored overseas with reasonable care.
+       - The same guest data already sits in the US in Airtable and Help Scout, so moving only the Activity Log wouldn't change the company's overall position.
+       - The one strong reason to move is a written promise, e.g. in the privacy policy or a partner contract, that data is stored in Australia. Worth a quick check; this isn't legal advice.
+     - **Cost and effort:**
+       - Same price either way.
+       - A Supabase project's region can't be changed later, so moving means a new project and copying the data across. The table is empty now, so if it ever has to move, now is the cheapest time.
+     - **It may not matter at all:** if the log ends up living in Airtable or TRTL (questions 1–3, §4), the Supabase location stops mattering.
+     - **Claude's suggestion:** stay in the US unless a privacy promise requires Australia.
 8. **When does Stacker's feed stop being used?** That sets the cutover deadline.
 
-### For the handover itself (Kat to fill in)
+### For the handover itself (Courtney to fill in)
 
-9. **The new owner's name and role**, and roughly how technical they are.
+9. **Owners:** name the **primary owner** of this project and any **secondary owners**, with their roles.
 10. **What access they'll get:** the Vercel project, the Supabase project, the GitHub repo (`tks-build/helpscoutapp`), Help Scout (apps and inbox settings), Stacker (for the history export), and possibly Airtable and Zapier.
 
 ---
@@ -167,13 +184,13 @@ Each row needs at least one of `customer_ref` or `customer_email`.
 
 ## 7. Accounts and access to transfer
 
-Everything is currently under Kat. Agree with Kat and Mat which of these move to you, or to a company account (question 7).
+Everything is currently under Kat. Agree with Kat which of these move to you, or to a company account (question 7).
 
 | Thing | Where | Notes |
 |---|---|---|
 | **Which repo is real** | | **Vercel builds from `tks-build/helpscoutapp`.** That's the copy to work in. Kat mentioned a copy under the Leatherback GitHub account too. It isn't a fork of this repo and isn't linked to Vercel, so it won't receive changes made here; don't work in it unless Vercel is re-linked to it. To move the code under the company account, move this repo there and re-link Vercel (Settings → Git), ideally at the same time as the Vercel move below. |
 | **GitHub repo** `tks-build/helpscoutapp` | Kat's personal GitHub | Kat adds you as a collaborator: repo **Settings → Collaborators → Add people**, then you accept the email invitation within 7 days. This doesn't change anything in Vercel or the panel's address. Moving the repo to an organisation instead means re-linking it in Vercel, and Vercel's free Hobby plan can't deploy private organisation repos. |
-| **Vercel plan and repo visibility: read this before you push** | | Kat's Vercel account is on the free **Hobby** plan (scope `kat-1214s-projects`), which can't add you to the dashboard: changing settings or redeploying needs Kat until that changes. The repo is **public** (checked 27 Oct 2026; no secrets in its history), so your pushes **will** build previews. **If the repo is made private,** Hobby only deploys commits pushed by the account owner, so your pushes would be blocked, previews included. Either way, the fix is (1) upgrading Kat's account to **Pro** and inviting you (Settings → Members), which keeps the address, or (2) transferring the project to a company **Pro** team you belong to (see the next row). Use the same email for your Git commits as for your Vercel account; Vercel matches commits by email. Whether the repo should stay public is for Kat and Mat to decide. |
+| **Vercel plan and repo visibility: read this before you push** | | Kat's Vercel account is on the free **Hobby** plan (scope `kat-1214s-projects`), which can't add you to the dashboard: changing settings or redeploying needs Kat until that changes. The repo is **public** (checked 27 Oct 2026; no secrets in its history), so your pushes **will** build previews. **If the repo is made private,** Hobby only deploys commits pushed by the account owner, so your pushes would be blocked, previews included. Either way, the fix is (1) upgrading Kat's account to **Pro** and inviting you (Settings → Members), which keeps the address, or (2) transferring the project to a company **Pro** team you belong to (see the next row). Use the same email for your Git commits as for your Vercel account; Vercel matches commits by email. Whether the repo should stay public is for Kat to decide. |
 | **Vercel project** `helpscoutapp` | Kat's Vercel account | Transfer it (project Settings → look for **Transfer Project**) or add you to the team. **After any transfer, check the production address `https://helpscoutapp-omega.vercel.app` still works.** If it changes, every Help Scout app pointing at it must be updated (Help Scout → Workspace → Apps → the app → Content URL), or the panel disappears for all BMs. Settings move with the project, but secret values can't be read back: re-enter any you need to change. A private repo owned by a GitHub **organisation** can only deploy on Vercel **Pro**. |
 | **Supabase project** `guest-activity-log` | Supabase (Pro plan) | Invite you to the organisation (Organization → Team), or transfer the project (Project Settings → General → Transfer project). Billing follows the organisation. |
 | **Help Scout apps** | Workspace → Apps | In Kat's experience, only the **creator** of a custom app can edit it: the original "Guest Profile Panel" app's settings were greyed out for her. Create **your own** test app (§8), and expect to need Kat for apps she created. |
@@ -275,7 +292,7 @@ Under option A, the script writes to the Airtable table instead, and must stay u
   - Author, Author Email, Source (single select), Source Ref (text);
   - Occurred At (date and time), Created (created time).
 
-  Check whether it already exists (§3). Adding a table and fields is a change to the live Airtable base, so agree it with Kat and Mat first.
+  Check whether it already exists (§3). Adding a table and fields is a change to the live Airtable base, so agree it with Kat first.
 - **Route:** change `api/activity.js` to read and write that table, starting from the old `createActivityEntry` / `shapeActivity` code in `api/airtable.js`. Use the Airtable library already in the project. Keep the same request and response shape, so the panel doesn't need changes. Add `TABLE_ACTIVITY_LOG` to Vercel.
 - **Rate limits:** each panel load already makes several Airtable calls. Keep the activity read to one query (filter by the customer's record), and cache where sensible.
 - **Option B only:** the panel writes to Supabase first, then Airtable. Add a daily job (`vercel.json` crons, like the existing `/api/sf-summary`) that removes Airtable rows older than the chosen window.
@@ -325,9 +342,37 @@ Expected: `{"entries":[]}`.
 
 - **BM:** booking manager, the panel's main users.
 - **Guest Profile Panel:** the Help Scout sidebar app in this repo, live at `https://helpscoutapp-omega.vercel.app`.
-- **Stacker:** the current CRM front end over Airtable, being replaced by **TRTL** (Mat's CRM).
+- **Stacker:** the current CRM front end over Airtable, being replaced by **TRTL**, the new CRM.
 - **Preview:** a Vercel deployment of a branch, with its own address, separate from production.
 - **Supabase:** hosted Postgres. **PostgREST:** the REST API Supabase puts in front of it.
 - **Zap:** a Zapier automation. The panel's lead form posts to two of them; the Activity Log doesn't.
 
-**Who to ask:** Kat (history of this work, Help Scout apps she created, approvals); Mat (TRTL, Airtable base, company accounts).
+**Who to ask:** Kat (history of this work, Help Scout apps she created, approvals and decisions, company accounts).
+
+---
+
+## 16. Working on this with Claude
+
+`CLAUDE.md` in this repo holds the working rules and the project quirks. Claude Code reads it automatically, so the rules don't need pasting in.
+
+**Setup:** use the Claude desktop app's **Code** tab, opened on a local copy of the repo:
+```bash
+git clone https://github.com/tks-build/helpscoutapp.git
+cd helpscoutapp
+git checkout activity-log-supabase
+```
+If you use an ordinary Claude chat or Project instead, upload this file, `CLAUDE.md`, `db/schema.sql`, `api/activity.js`, `lib/supabaseAuth.js` and `src/App.jsx`. In that case, also paste the rules from `CLAUDE.md` into your first message, because only Claude Code reads it automatically.
+
+**First message:**
+```text
+I'm taking over the Activity Log project in this repo. Read ACTIVITY_LOG_HANDOVER.md and CLAUDE.md in full, then look at the files they point to. Follow the working rules in CLAUDE.md.
+
+Don't write any code yet. Give me (1) a plain-language summary of where things stand, (2) the questions in section 3 I still need to answer, and (3) anything in the handover that looks wrong or out of date compared with the code.
+```
+
+**One prompt per stage:**
+- **After answering §3:** "Here are my answers to section 3: [paste]. Recommend a storage option from section 4 (A, B or C) with reasons, list exactly what work it involves, and wait for my approval before starting."
+- **The fix before importing (§9):** "Implement the section 9 fix on a new branch from activity-log-supabase: the SQL change, the code change and a test. Give me the SQL to run in the TEST Supabase project first. Show me the diff before pushing."
+- **Looking at Stacker's data safely (§10):** "I've saved Stacker's feed request (Copy as cURL) to a local file that git ignores. Write a small script that reads it, fetches ONE guest's feed, and prints only the field names and one anonymised example. Don't print or store the credentials."
+- **The import (§10):** "Write the one-off Stacker import script described in section 10. It must be safe to re-run and keep the original dates. Rehearse it against the test project, then report counts for 3 guests compared with Stacker."
+- **Cutover (§11):** "Walk me through section 11 one step at a time. Stop after each step and wait for me to confirm before the next."
