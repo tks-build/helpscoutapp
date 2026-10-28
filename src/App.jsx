@@ -1,8 +1,22 @@
 import HelpScout from '@helpscout/javascript-sdk';
 import { DefaultStyle, Heading, Spinner, Text, useSetAppHeight } from '@helpscout/ui-kit';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import LeadForm, { EnquiryCard } from './LeadForm.jsx';
 import { apiFetch, startSession } from './api.js';
+
+/** The signed-in Help Scout user, for crediting saved notes in the Activity Log. */
+const HelpScoutUser = createContext(null);
+
+/**
+ * "First Last" for a Help Scout user. Some profiles carry a placeholder
+ * surname like "." — including it produces authors called "Kat .", so parts
+ * with no letters in them are dropped.
+ */
+function helpScoutAuthorName(user) {
+  return [user?.firstName, user?.lastName]
+    .filter((part) => /\p{L}/u.test(String(part || '')))
+    .join(' ');
+}
 
 /**
  * Activity log rollout flags.
@@ -219,7 +233,9 @@ function App() {
           onExistingCustomer={lookUpEmail}
         />
       ) : (
-        <HomePage customerData={customerData} context={context} enquiry={enquiry} onLeadSubmitted={refreshAfterSubmit} />
+        <HelpScoutUser.Provider value={context?.user || null}>
+          <HomePage customerData={customerData} context={context} enquiry={enquiry} onLeadSubmitted={refreshAfterSubmit} />
+        </HelpScoutUser.Provider>
       )}
     </main>
   );
@@ -892,11 +908,7 @@ function ActivityLog({ customerId, customerEmail, context, crmUrl: crmLink }) {
   }, [open, customerId, customerEmail]);
 
   const user = context?.user;
-  // Some Help Scout profiles carry a placeholder surname like "." — including
-  // it produces authors called "Kat .", so drop parts with no letters in them.
-  const authorName = [user?.firstName, user?.lastName]
-    .filter((part) => /\p{L}/u.test(String(part || '')))
-    .join(' ');
+  const authorName = helpScoutAuthorName(user);
   const conversationId = context?.conversation?.id;
 
   if (!customerId) return null;
@@ -1146,6 +1158,8 @@ function TripGroup({ rows, title, defaultOpen = false }) {
 function NotesEditor({ recordId, recordType, initialNotes, placeholder }) {
   const [notes, setNotes] = useState(initialNotes || '');
   const [saveStatus, setSaveStatus] = useState(null);
+  // Sent so the server can credit the note in the guest's Activity Log.
+  const user = useContext(HelpScoutUser);
 
   async function handleSave() {
     setSaveStatus('saving');
@@ -1153,7 +1167,13 @@ function NotesEditor({ recordId, recordType, initialNotes, placeholder }) {
       const res = await apiFetch('/api/airtable', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ recordId, recordType, notes }),
+        body: JSON.stringify({
+          recordId,
+          recordType,
+          notes,
+          authorName: helpScoutAuthorName(user),
+          authorEmail: user?.email,
+        }),
       });
       const body = await res.json();
       if (!res.ok) throw new Error(body.details || body.error || 'Failed');

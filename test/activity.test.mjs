@@ -1,5 +1,5 @@
 /**
- * Tests for the activity route's Supabase auth headers. Run from the project
+ * Tests for the activity route (which forwards to TRTL) and the Supabase key helper. Run from the project
  * folder with:  node --test
  *
  * api/activity.js reads its environment when it loads, so route cases run in
@@ -42,64 +42,70 @@ test('no key, no headers', () => {
   assert.deepEqual(supabaseAuthHeaders(undefined), {});
 });
 
-// --------------------------------------------- the route, Supabase stubbed
+// ------------------------------------------------ the route, TRTL stubbed
 
-/** Calls the real handler with Supabase stubbed; returns the reply and what Supabase was sent. */
+/** Calls the real handler with TRTL stubbed; returns the reply and what TRTL was sent. */
 function callRoute(env, request) {
   const script = `
     const sent = [];
     globalThis.fetch = async (url, options = {}) => {
-      sent.push({ url: String(url), method: options.method || 'GET', headers: options.headers || {} });
-      return { ok: true, status: 200, text: async () => '[{"id":"1","type":"note","body":"hi","source":"helpscout"}]' };
+      sent.push({ url: String(url), method: options.method || 'GET', headers: options.headers || {}, body: options.body || null });
+      return { ok: true, status: 200, text: async () => '{"entries":[{"id":"1","type":"note","body":"hi","author":"A","occurredAt":"2026-10-28T00:00:00Z"}]}' };
     };
     const { default: handler } = await import(${JSON.stringify(ROUTE)});
     const reply = { code: 200, body: null, status(c) { this.code = c; return this; }, json(b) { this.body = b; return this; } };
     await handler(${JSON.stringify(request)}, reply);
     console.log(JSON.stringify({ code: reply.code, body: reply.body, sent }));
   `;
-  const inherited = Object.fromEntries(Object.entries(process.env).filter(([key]) => !/^(SUPABASE_|REQUIRE_SESSION|HELPSCOUT_)/.test(key)));
-  const output = execFileSync(process.execPath, ['--input-type=module', '-e', script], {
+  const inherited = Object.fromEntries(Object.entries(process.env).filter(([key]) => !/^(TRTL_|SUPABASE_|REQUIRE_SESSION|HELPSCOUT_)/.test(key)));
+  const output = execFileSync(process.execPath, ["--input-type=module", "-e", script], {
     env: { ...inherited, ...env },
-    encoding: 'utf8',
+    encoding: "utf8",
   });
-  return JSON.parse(output.trim().split('\n').pop());
+  return JSON.parse(output.trim().split("\n").pop());
 }
 
-const configured = (key) => ({ SUPABASE_URL: 'https://example.supabase.co', SUPABASE_SERVICE_ROLE_KEY: key });
-const read = { method: 'GET', query: { customerRef: 'recAAAAAAAAAAAAAA', email: 'guest@example.com' }, headers: {} };
+const PANEL_KEY = "dummy-panel-key";
+const configured = { TRTL_PANEL_KEY: PANEL_KEY };
+const read = { method: "GET", query: { customerRef: "recAAAAAAAAAAAAAA" }, headers: {} };
 
-test('reading with a secret key sends no Authorization header', () => {
-  const { code, sent } = callRoute(configured(SECRET), read);
+test("reading asks TRTL for the guest, with the panel key", () => {
+  const { code, body, sent } = callRoute(configured, read);
   assert.equal(code, 200);
   assert.equal(sent.length, 1);
-  assert.match(sent[0].url, /^https:\/\/example\.supabase\.co\/rest\/v1\/activity_entries\?/);
-  assert.equal(sent[0].headers.apikey, SECRET);
-  assert.equal('Authorization' in sent[0].headers, false);
+  assert.equal(sent[0].url, "https://trtl.leatherbacktravel.com/api/panel/activity?customerRef=recAAAAAAAAAAAAAA");
+  assert.equal(sent[0].headers.Authorization, `Bearer ${PANEL_KEY}`);
+  assert.equal(body.entries[0].author, "A");
 });
 
-test('reading with the legacy key still sends both headers', () => {
-  const { sent } = callRoute(configured(LEGACY), read);
-  assert.equal(sent[0].headers.apikey, LEGACY);
-  assert.equal(sent[0].headers.Authorization, `Bearer ${LEGACY}`);
+test("TRTL_URL overrides the address", () => {
+  const { sent } = callRoute({ ...configured, TRTL_URL: "https://trtl.example.test/" }, read);
+  assert.ok(sent[0].url.startsWith("https://trtl.example.test/api/panel/activity?"));
 });
 
-test('writes keep their own headers alongside the key', () => {
-  const write = { method: 'POST', query: {}, headers: {}, body: { customerRef: 'recAAAAAAAAAAAAAA', body: 'Called guest', authorName: 'Test BM' } };
-  const { code, sent } = callRoute(configured(SECRET), write);
+test("writing posts the note and author to TRTL", () => {
+  const write = { method: "POST", query: {}, headers: {}, body: { customerRef: "recAAAAAAAAAAAAAA", customerEmail: "guest@example.com", body: " Called guest ", authorName: "Test BM", authorEmail: "bm@example.com" } };
+  const { code, sent } = callRoute(configured, write);
   assert.equal(code, 200);
-  assert.equal(sent[0].method, 'POST');
-  assert.equal(sent[0].headers.apikey, SECRET);
-  assert.equal(sent[0].headers['Content-Type'], 'application/json');
-  assert.match(sent[0].headers.Prefer, /merge-duplicates/);
-  assert.equal('Authorization' in sent[0].headers, false);
+  assert.equal(sent[0].method, "POST");
+  assert.deepEqual(JSON.parse(sent[0].body), { customerRef: "recAAAAAAAAAAAAAA", body: "Called guest", authorName: "Test BM", authorEmail: "bm@example.com" });
 });
 
-test('soft delete is an update, never a DELETE', () => {
-  const { sent } = callRoute(configured(SECRET), { method: 'DELETE', query: { id: 'abc' }, headers: {} });
-  assert.equal(sent[0].method, 'PATCH');
+test("a blank note or missing guest is refused without calling TRTL", () => {
+  const blank = callRoute(configured, { method: "POST", query: {}, headers: {}, body: { customerRef: "recAAAAAAAAAAAAAA", body: "  " } });
+  assert.equal(blank.code, 400);
+  const noGuest = callRoute(configured, { method: "POST", query: {}, headers: {}, body: { body: "hi" } });
+  assert.equal(noGuest.code, 400);
+  assert.equal(blank.sent.length + noGuest.sent.length, 0);
 });
 
-test('without Supabase settings the route says so and calls nothing', () => {
+test("deleting is not offered", () => {
+  const { code, sent } = callRoute(configured, { method: "DELETE", query: { id: "abc" }, headers: {} });
+  assert.equal(code, 405);
+  assert.equal(sent.length, 0);
+});
+
+test("without the panel key the route says so and calls nothing", () => {
   const { code, sent } = callRoute({}, read);
   assert.equal(code, 501);
   assert.equal(sent.length, 0);

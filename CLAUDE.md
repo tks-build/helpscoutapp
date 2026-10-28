@@ -8,8 +8,9 @@ This repo is the **Guest Profile Panel**: a Help Scout sidebar app used daily by
 
 ## Working rules (agreed with the project owner — follow them)
 
-- **The panel is live.** Work on a branch and test on a Vercel preview. Nothing is merged to `main` or deployed to production without the owner's explicit approval.
-- **Ask first.** Show the diff before any commit or push, and ask before pushing.
+- **The panel is live.** Work on a branch and test on its Vercel preview. Collaborators push their own branches; Vercel builds a preview of each push automatically.
+- **`main` is protected.** Changes reach it only through a pull request, approved by the owner before it's merged. No force-pushes, and `main` can't be deleted. Production deploys from `main`, so nothing reaches production without that approval.
+- **Keep the repo public** while Vercel is on the owner's free Hobby plan: if it's made private, collaborators' pushes stop deploying, previews included.
 - **Secrets never go through chat.** Never ask for, print, log or commit keys, tokens, passwords, Zapier hook URLs or Stacker credentials. If a value is needed, say where to put it: Vercel → Environment Variables, Supabase, or a local `.env` (git-ignored).
 - **Protected without approval:**
   - Airtable fields and tables;

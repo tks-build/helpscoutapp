@@ -8,6 +8,38 @@ This document is meant to be complete. If something here is unclear or turns out
 
 ---
 
+## 0. Update, 28 Oct 2026 (Courtney, with Claude)
+
+Courtney has taken over. The big change: **the Activity Log now lives in TRTL**, not Supabase or Airtable.
+
+- **TRTL has its own Activity Log**, live on `main` since 28 Oct 2026: an "Activity Log" tab on each guest profile.
+  - Entries record the author, date and time, and the trip (or the lead's tags) they came from.
+  - Authors can edit or delete their own entries; admins can change any.
+  - Saving a Booking Note in TRTL logs it automatically, for everyone.
+  - The tab is **admin-only for now**, while the Stacker import and testing happen.
+  - Storage: one file per guest in TRTL's Vercel Blob store (`activity-log/<Customers record id>.json`). Not Airtable, so the record limits in §2 and §4 don't apply.
+- **The panel posts to TRTL.** TRTL has a server-to-server endpoint, `/api/panel/activity` (GET and POST), protected by a shared key, `TRTL_PANEL_KEY`. On branch `activity-log-trtl`, `api/activity.js` forwards to it instead of Supabase (shared helper: `lib/trtl.js`). Deleting isn't offered from the panel; that's done in TRTL.
+- **Booking notes saved in the panel are logged too**, as in TRTL. After the note saves to Airtable, `api/airtable.js` sends it to TRTL as a "Booking note" entry. TRTL adds the lead's or booking's trip (or tags) and a link to it.
+  - Only a changed, non-empty note is logged. Checking this costs one extra Airtable read per save, made only while `TRTL_PANEL_KEY` is set.
+  - A logging failure never fails the save.
+  - `src/App.jsx` now sends the Help Scout user's name and email with each save, through a small React context (`HelpScoutUser`).
+- **Supabase is expected to be retired.** It's empty and nothing will write to it once the branch is merged.
+- **Courtney runs the Stacker history import** into TRTL; she has Stacker access.
+
+**Update, 29 Oct 2026 (setup for testing the TRTL branch):**
+
+- **Courtney is a collaborator** on `tks-build/helpscoutapp` and pushes `activity-log-trtl` herself. Vercel builds its preview automatically.
+- **`main` is protected:** changes go in only through a pull request, with no force-pushes or deleting. The owner approves the merge.
+- **The repo stays public** while Vercel is on Kat's free plan; otherwise Courtney's pushes won't deploy.
+- **Settings in Vercel:**
+  - `TRTL_PANEL_KEY`: **Preview only**, marked Sensitive. Production gets it at go-live.
+  - `TABLE_BOOKING_CRM`: Production and Preview.
+- **Test app:** Kat's **"GP test oct 09"** (Salt Caravan inbox). Its key already matches Preview (`HELPSCOUT_SECRET_TEST`). Kat sets its Content URL to the branch's preview address.
+
+Answers to §3 are written under each question below.
+
+---
+
 ## 1. The short version
 
 - **What this is:** BMs (booking managers) record their activity on a guest (calls, emails, notes) in **Stacker's activity feed** today. Stacker is being replaced by **TRTL**, and the activity feed is one of the Stacker functions that needs a planned move.
@@ -63,11 +95,15 @@ Please answer these in this file, under each question, or send them to Kat.
 
    If TRTL's data is the Airtable base, read §4 before deciding.
 
+   > **Answer (Q1–2, 28 Oct 2026):** TRTL is a Next.js app on Vercel over the Airtable base, with no database of its own. The Activity Log lives **in TRTL**, in its Vercel Blob store (one file per guest), owned by TRTL. Effectively option (a); not Airtable.
+
 3. **If (a): when can TRTL accept entries, and how?** For example, direct database access, an API from TRTL, or a one-off import. If that's soon, we might send new entries straight to TRTL and use Supabase only for history.
    > *What "how" means:* the route a new note takes to reach TRTL's data.
    > 1. **Direct database access:** our server writes each note straight into the database TRTL reads. If that's Airtable, this means writing to an Airtable table.
    > 2. **An API from TRTL:** TRTL offers a "send me a note for guest X" address, and our panel posts to it. TRTL decides how and where it's stored.
    > 3. **A one-off import:** notes collect in Supabase until TRTL is ready, are copied across once, and go to TRTL from then on.
+
+   > **Answer (28 Oct 2026):** now, through **an API from TRTL** (option 2): `POST`/`GET https://trtl.leatherbacktravel.com/api/panel/activity`, with `Authorization: Bearer <TRTL_PANEL_KEY>`. Stacker's history arrives by a one-off import that Courtney runs. TRTL skips entries it already has, so the import can be re-run.
 
 ### Volume (needed only if the answer is "Airtable")
 
@@ -78,11 +114,18 @@ These decide between options A and B in §4.
 - **Does an "Activity Log" table already exist in the Airtable base?** An earlier version of the panel was built to write to one (see §6), so it may already be there.
 - **How should TRTL show it:** all history, or recent entries only?
 
+> **Answer (28 Oct 2026):** mostly no longer needed, as the log isn't going into Airtable. An "Activity Log" table does exist (`tblVYOGvQvPbDM3TX`: 8 fields, 4 records), plus "Testing - Leatherback Activity Feed" (3 records). Neither is used. TRTL shows all history, newest first, with search.
+
 ### Shape of the data
 
 4. **How does TRTL identify a guest?** By the Airtable record ID (`rec…`), or by its own IDs? Is the guest's email reliable enough to match on?
 5. **Are specific column names or types needed?** `db/schema.sql` shows the current design; adopt it as-is, or match TRTL's naming now.
 6. **Will people also write notes inside TRTL** that need to appear in the same log, e.g. calls, emails or status changes?
+
+   > **Answers (28 Oct 2026):**
+   > - **Q4:** by the Airtable Customers record ID (`rec…`), the same ID the panel sends as `customerRef`. Email isn't used.
+   > - **Q5:** TRTL's own shape is used. Its entries are `id`, `at`, `user`, `userEmail`, `kind` (`note` / `booking-note` / `imported`), `text`, `source`, `trips`, `tags`, `editedAt` and `editedBy`. The panel endpoint replies in the panel's existing shape (`id`, `type`, `body`, `author`, `occurredAt`).
+   > - **Q6:** yes. Notes typed in TRTL (guest tab, leads, bookings, trip cards) and every Booking Note save land in the same log.
 
 ### Ownership and hosting
 
@@ -108,10 +151,17 @@ These decide between options A and B in §4.
      - **Claude's suggestion:** stay in the US unless a privacy promise requires Australia.
 8. **When does Stacker's feed stop being used?** That sets the cutover deadline.
 
+   > **Answers (28 Oct 2026):**
+   > - **Q7a:** the Vercel project moves to a company Vercel account soon.
+   > - **Q7b:** moot; Supabase is expected to be retired.
+   > - **Q8:** to be decided later.
+
 ### For the handover itself (Courtney to fill in)
 
 9. **Owners:** name the **primary owner** of this project and any **secondary owners**, with their roles.
 10. **What access they'll get:** the Vercel project, the Supabase project, the GitHub repo (`tks-build/helpscoutapp`), Help Scout (apps and inbox settings), Stacker (for the history export), and possibly Airtable and Zapier.
+
+    > **Answer (28 Oct 2026):** Courtney has Stacker access and runs the import. Other owners and access are still to be confirmed with Kat, alongside the Vercel move.
 
 ---
 
@@ -303,7 +353,7 @@ Under option A, the script writes to the Airtable table instead, and must stay u
 
 These were agreed with Kat. The panel is live and used daily by about 35 people on Windows and macOS.
 
-- **Branch and preview first.** Nothing goes to `main` or production without approval. Agree with Kat who approves from now on.
+- **Branch and preview first.** Push your branch; Vercel builds a preview. `main` is protected: changes go in only through a pull request that the owner approves, with no force-pushes or deleting.
 - **Don't change without approval:**
   - Airtable fields or tables;
   - Zapier Zaps or the data sent to them;
