@@ -309,6 +309,7 @@ function ProfilePanel({ profile, showEmail, context, enquiry, prefill, onLeadSub
         customerEmail={customer?.matchedEmail || fields['Client Email']}
         context={context}
         crmUrl={customer?.crmActivityUrl || crmUrl(customer)}
+        trtlUrl={customer?.trtlActivityUrl}
       />
 
       {/* Contact sits last, directly above the Calendly button. The two are
@@ -572,11 +573,14 @@ function ContactCard({ customer }) {
           <PhoneIcon />
           Contact
         </span>
-        {link && (
-          <a className="iconButton" href={link} rel="noreferrer" target="_blank" title="Open customer in CRM">
-            <span aria-hidden="true">&rarr;</span>
-          </a>
-        )}
+        <span className="rowActions">
+          <TrtlLink href={customer?.trtlUrl} label="Open guest in TRTL" />
+          {link && (
+            <a className="iconButton" href={link} rel="noreferrer" target="_blank" title="Open customer in CRM">
+              <span aria-hidden="true">&rarr;</span>
+            </a>
+          )}
+        </span>
       </div>
 
       {p.viaAgent && (
@@ -876,7 +880,7 @@ function MailvioSubscriptions({ email, context }) {
  * so entries stay consistent instead of drifting between "19AUG26 FP:" and
  * "20 AUG CJ" depending on who wrote them.
  */
-function ActivityLog({ customerId, customerEmail, context, crmUrl: crmLink }) {
+function ActivityLog({ customerId, customerEmail, context, crmUrl: crmLink, trtlUrl }) {
   const [feed, setFeed] = useState([]);
   const [body, setBody] = useState('');
   const [status, setStatus] = useState(null);
@@ -984,17 +988,20 @@ function ActivityLog({ customerId, customerEmail, context, crmUrl: crmLink }) {
         ) : (
           <span className="groupTitle">Activity log</span>
         )}
-        {crmLink && (
-          <a
-            className="iconButton"
-            href={crmLink}
-            rel="noreferrer"
-            target="_blank"
-            title="Open activity in CRM"
-          >
-            <span aria-hidden="true">&rarr;</span>
-          </a>
-        )}
+        <span className="rowActions">
+          <TrtlLink href={trtlUrl} label="Open Activity Log in TRTL" />
+          {crmLink && (
+            <a
+              className="iconButton"
+              href={crmLink}
+              rel="noreferrer"
+              target="_blank"
+              title="Open activity in CRM"
+            >
+              <span aria-hidden="true">&rarr;</span>
+            </a>
+          )}
+        </span>
       </div>
 
       {!ACTIVITY_WRITE_ENABLED || !open ? null : (
@@ -1083,6 +1090,7 @@ function LeadRow({ lead }) {
           <button className="chevronButton" onClick={() => setExpanded(!expanded)} title="Booking notes">
             {expanded ? '▲' : '▼'}
           </button>
+          <TrtlLink href={lead.trtlUrl} label="Open lead in TRTL" />
           <ExternalLink href={crmUrl(lead)} label="Open lead in CRM" />
         </div>
       </div>
@@ -1233,6 +1241,7 @@ function BookingRow({ booking }) {
           <button className="chevronButton" onClick={() => setExpanded(!expanded)} title="Booking notes">
             {expanded ? '▲' : '▼'}
           </button>
+          <TrtlLink href={booking.trtlUrl} label="Open booking in TRTL" />
           <ExternalLink href={crmUrl(booking)} label="Open booking in CRM" />
         </div>
       </div>
@@ -1760,6 +1769,19 @@ function ExternalLink({ href, label }) {
   return (
     <a className="rowLink" href={href} rel="noreferrer" target="_blank" title={label}>
       &rarr;
+    </a>
+  );
+}
+
+/**
+ * "TRTL" link beside the Stacker arrow while the team moves across. Hidden
+ * when the API didn't send a TRTL address (e.g. an older API deploy).
+ */
+function TrtlLink({ href, label }) {
+  if (!href) return null;
+  return (
+    <a className="rowLink trtlLink" href={href} rel="noreferrer" target="_blank" title={label}>
+      TRTL
     </a>
   );
 }

@@ -1,6 +1,6 @@
 import Airtable from 'airtable';
 import { requireSessionIfEnabled } from '../lib/session.js';
-import { trtlActivity, trtlConfigured } from '../lib/trtl.js';
+import { trtlActivity, trtlBaseUrl, trtlConfigured } from '../lib/trtl.js';
 
 const {
   AIRTABLE_API_KEY,
@@ -468,6 +468,10 @@ async function shapeProfile(base, customer, email, mailboxId) {
     // Stacker addresses its record tabs with a fragment. Kept here beside the
     // base URL so the whole pattern changes in one place when TRTL lands.
     crmActivityUrl: `${CRM_BASE_URL}/crm/customers/view/cus_${customer.id}#Activity`,
+    // TRTL, shown beside the Stacker links during the changeover. TRTL uses
+    // the same Airtable record ids, so no lookups are needed.
+    trtlUrl: `${trtlBaseUrl()}/guests/${customer.id}`,
+    trtlActivityUrl: `${trtlBaseUrl()}/guests/${customer.id}?tab=activity`,
     calendlyUrl: buildCalendlyUrl(mailboxId, fields['Client Email'] || email),
 
     // --- SF "Good to know" card -------------------------------------------
@@ -703,6 +707,7 @@ function shapeLeads(records, tripMap) {
         notes: firstValue(fields[L.notes]) || '',
         group: getLeadGroup(status),
         crmUrl: `${CRM_BASE_URL}/crm/booking-crm/view/bcr_${record.id}`,
+        trtlUrl: `${trtlBaseUrl()}/leads/${record.id}`,
       };
     })
     .sort((a, b) => b.dateAddedTimestamp - a.dateAddedTimestamp);
@@ -734,6 +739,7 @@ function shapeBookings(records, tripMap, coordinatorMap, managerNameById) {
       endTimestamp: endDate?.getTime() || 0,
       group,
       crmUrl: `${CRM_BASE_URL}/crm/bookings/view/boo_${record.id}`,
+      trtlUrl: `${trtlBaseUrl()}/bookings/${record.id}`,
 
       bookingType: firstValue(fields[B.bookingType]),
       roommateRequest: firstValue(fields[B.roommateRequest]),
