@@ -120,6 +120,14 @@ body {
   color: #ffffff;
 }
 
+/* Text link to TRTL beside the Stacker arrow during the changeover. */
+.trtlLink {
+  font-size: 10.5px;
+  letter-spacing: 0.04em;
+  padding: 0 6px;
+  width: auto;
+}
+
 .copyIconButton {
   background: transparent;
   border: 1px solid var(--trtl-line);

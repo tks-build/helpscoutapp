@@ -1,177 +1,79 @@
 /**
- * Activity feed — read and write.
+ * Activity feed — read and write, stored in TRTL.
  *
- * Backed by Postgres (Supabase) rather than Airtable, because the feed is
- * append-only and unbounded. See db/schema.sql for the reasoning.
- *
- * Reached over Supabase's REST interface rather than a Postgres driver, for
- * two reasons: no dependency to add, and no connection pool to exhaust. Every
- * Vercel invocation is a separate process, and direct Postgres connections
- * from serverless functions run out of pool long before they run out of load.
+ * The Activity Log's home is TRTL (decided 28 Oct 2026; see
+ * ACTIVITY_LOG_HANDOVER.md). This route passes the panel's requests to TRTL's
+ * panel endpoint, server to server, so the TRTL key never reaches the
+ * browser. The reply keeps the shape the panel already shows.
  *
  * Requires:
- *   SUPABASE_URL
- *   SUPABASE_SERVICE_ROLE_KEY   (server only — never expose to the browser)
+ *   TRTL_PANEL_KEY   the same value as TRTL_PANEL_KEY in TRTL's Vercel
+ *                    settings. Server only — never expose to the browser.
+ *   TRTL_URL         optional; defaults to https://trtl.leatherbacktravel.com
+ *
+ * TRTL trusts the author name and email sent here, so REQUIRE_SESSION must be
+ * on before this is switched on for BMs.
  */
 
 import { requireSessionIfEnabled } from '../lib/session.js';
-
-const { SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY } = process.env;
-
-const TABLE = 'activity_entries';
-const SOURCE = 'helpscout';
+import { trtlActivity, trtlConfigured } from '../lib/trtl.js';
 
 export default async function handler(req, res) {
   // No-op until REQUIRE_SESSION=true is set in Vercel. See lib/session.js.
   if (!requireSessionIfEnabled(req, res)) return undefined;
-  if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
+  if (!trtlConfigured()) {
     return sendJson(res, 501, {
       error: 'Activity store is not configured',
-      details: 'Set SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY.',
+      details: 'Set TRTL_PANEL_KEY.',
     });
   }
 
   if (req.method === 'GET') return listEntries(req, res);
   if (req.method === 'POST') return createEntry(req, res);
-  if (req.method === 'DELETE') return softDeleteEntry(req, res);
 
   return sendJson(res, 405, { error: 'Method Not Allowed' });
 }
 
 async function listEntries(req, res) {
-  const customerRef = String(req.query.customerRef || '').trim();
-  const email = normaliseEmail(req.query.email);
-
-  if (!customerRef && !email) {
-    return sendJson(res, 400, { error: 'Need customerRef or email' });
-  }
-
-  // Matched on either identifier, so entries survive the Airtable -> TRTL
-  // change of customer_ref meaning.
-  const identityFilter = [
-    customerRef ? `customer_ref.eq.${encodeURIComponent(customerRef)}` : null,
-    email ? `customer_email.eq.${encodeURIComponent(email)}` : null,
-  ].filter(Boolean).join(',');
-
-  const params = new URLSearchParams({
-    select: '*',
-    deleted_at: 'is.null',
-    order: 'occurred_at.desc',
-    limit: '200',
-  });
-  params.set('or', `(${identityFilter})`);
+  const customerRef = firstString(req.query.customerRef);
+  if (!customerRef) return sendJson(res, 400, { error: 'Need customerRef' });
 
   try {
-    const rows = await supabase(`/${TABLE}?${params}`);
-    return sendJson(res, 200, { entries: rows.map(shapeEntry) });
+    const payload = await trtlActivity({ query: { customerRef } });
+    return sendJson(res, 200, { entries: payload.entries || [] });
   } catch (error) {
-    return sendJson(res, 500, { error: 'Could not read activity', details: error.message });
+    return sendJson(res, 502, { error: 'Could not read activity', details: error.message });
   }
 }
 
 async function createEntry(req, res) {
-  const {
-    customerRef,
-    customerEmail,
-    bookingRef,
-    body,
-    type,
-    authorName,
-    authorEmail,
-    sourceRef,
-    occurredAt,
-    metadata,
-  } = req.body || {};
+  const { customerRef, body, authorName, authorEmail } = req.body || {};
 
   if (!String(body || '').trim()) {
     return sendJson(res, 400, { error: 'An entry needs a body' });
   }
-
-  if (!customerRef && !customerEmail) {
-    return sendJson(res, 400, { error: 'An entry needs a customer reference or email' });
+  if (!customerRef) {
+    return sendJson(res, 400, { error: 'An entry needs a customer reference' });
   }
-
-  const row = {
-    customer_ref: customerRef || null,
-    customer_email: normaliseEmail(customerEmail) || null,
-    booking_ref: bookingRef || null,
-    type: type || 'note',
-    body: String(body).trim(),
-    author_name: authorName || null,
-    author_email: authorEmail || null,
-    source: SOURCE,
-    source_ref: sourceRef || null,
-    occurred_at: occurredAt || new Date().toISOString(),
-    metadata: metadata || {},
-  };
 
   try {
-    // merge-duplicates makes a repeated write with the same source_ref update
-    // rather than duplicate — which is what stops a double-clicked "copy last
-    // reply" appearing twice.
-    const rows = await supabase(`/${TABLE}`, {
-      method: 'POST',
-      body: JSON.stringify(row),
-      headers: { Prefer: 'return=representation,resolution=merge-duplicates' },
+    const payload = await trtlActivity({
+      body: {
+        customerRef,
+        body: String(body).trim(),
+        authorName: String(authorName || '').trim() || 'Unknown',
+        ...(authorEmail ? { authorEmail: String(authorEmail).trim() } : {}),
+      },
     });
-
-    return sendJson(res, 200, { ok: true, entry: shapeEntry(rows[0]) });
+    return sendJson(res, 200, { ok: true, entry: payload.entry });
   } catch (error) {
-    return sendJson(res, 500, { error: 'Could not save activity', details: error.message });
+    return sendJson(res, 502, { error: 'Could not save activity', details: error.message });
   }
 }
 
-async function softDeleteEntry(req, res) {
-  const id = String(req.query.id || '').trim();
-  if (!id) return sendJson(res, 400, { error: 'Missing id' });
-
-  try {
-    await supabase(`/${TABLE}?id=eq.${encodeURIComponent(id)}`, {
-      method: 'PATCH',
-      body: JSON.stringify({ deleted_at: new Date().toISOString() }),
-    });
-    return sendJson(res, 200, { ok: true });
-  } catch (error) {
-    return sendJson(res, 500, { error: 'Could not remove entry', details: error.message });
-  }
-}
-
-async function supabase(path, options = {}) {
-  const response = await fetch(`${SUPABASE_URL}/rest/v1${path}`, {
-    ...options,
-    headers: {
-      apikey: SUPABASE_SERVICE_ROLE_KEY,
-      Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
-      'Content-Type': 'application/json',
-      ...(options.headers || {}),
-    },
-  });
-
-  const text = await response.text();
-  if (!response.ok) {
-    throw new Error(`Supabase ${response.status}: ${text.slice(0, 300)}`);
-  }
-
-  return text ? JSON.parse(text) : [];
-}
-
-function shapeEntry(row) {
-  if (!row) return null;
-  return {
-    id: row.id,
-    type: row.type,
-    body: row.body,
-    author: row.author_name || '',
-    source: row.source,
-    occurredAt: row.occurred_at,
-    createdAt: row.created_at,
-  };
-}
-
-function normaliseEmail(value) {
-  if (Array.isArray(value)) return normaliseEmail(value[0]);
-  if (typeof value !== 'string') return '';
-  return value.trim().toLowerCase();
+function firstString(value) {
+  if (Array.isArray(value)) return firstString(value[0]);
+  return typeof value === 'string' ? value.trim() : '';
 }
 
 function sendJson(res, statusCode, body) {

@@ -1,8 +1,22 @@
 import HelpScout from '@helpscout/javascript-sdk';
 import { DefaultStyle, Heading, Spinner, Text, useSetAppHeight } from '@helpscout/ui-kit';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import LeadForm, { EnquiryCard } from './LeadForm.jsx';
 import { apiFetch, startSession } from './api.js';
+
+/** The signed-in Help Scout user, for crediting saved notes in the Activity Log. */
+const HelpScoutUser = createContext(null);
+
+/**
+ * "First Last" for a Help Scout user. Some profiles carry a placeholder
+ * surname like "." — including it produces authors called "Kat .", so parts
+ * with no letters in them are dropped.
+ */
+function helpScoutAuthorName(user) {
+  return [user?.firstName, user?.lastName]
+    .filter((part) => /\p{L}/u.test(String(part || '')))
+    .join(' ');
+}
 
 /**
  * Activity log rollout flags.
@@ -219,7 +233,9 @@ function App() {
           onExistingCustomer={lookUpEmail}
         />
       ) : (
-        <HomePage customerData={customerData} context={context} enquiry={enquiry} onLeadSubmitted={refreshAfterSubmit} />
+        <HelpScoutUser.Provider value={context?.user || null}>
+          <HomePage customerData={customerData} context={context} enquiry={enquiry} onLeadSubmitted={refreshAfterSubmit} />
+        </HelpScoutUser.Provider>
       )}
     </main>
   );
@@ -293,6 +309,7 @@ function ProfilePanel({ profile, showEmail, context, enquiry, prefill, onLeadSub
         customerEmail={customer?.matchedEmail || fields['Client Email']}
         context={context}
         crmUrl={customer?.crmActivityUrl || crmUrl(customer)}
+        trtlUrl={customer?.trtlActivityUrl}
       />
 
       {/* Contact sits last, directly above the Calendly button. The two are
@@ -556,11 +573,14 @@ function ContactCard({ customer }) {
           <PhoneIcon />
           Contact
         </span>
-        {link && (
-          <a className="iconButton" href={link} rel="noreferrer" target="_blank" title="Open customer in CRM">
-            <span aria-hidden="true">&rarr;</span>
-          </a>
-        )}
+        <span className="rowActions">
+          <TrtlLink href={customer?.trtlUrl} label="Open guest in TRTL" />
+          {link && (
+            <a className="iconButton" href={link} rel="noreferrer" target="_blank" title="Open customer in CRM">
+              <span aria-hidden="true">&rarr;</span>
+            </a>
+          )}
+        </span>
       </div>
 
       {p.viaAgent && (
@@ -860,7 +880,7 @@ function MailvioSubscriptions({ email, context }) {
  * so entries stay consistent instead of drifting between "19AUG26 FP:" and
  * "20 AUG CJ" depending on who wrote them.
  */
-function ActivityLog({ customerId, customerEmail, context, crmUrl: crmLink }) {
+function ActivityLog({ customerId, customerEmail, context, crmUrl: crmLink, trtlUrl }) {
   const [feed, setFeed] = useState([]);
   const [body, setBody] = useState('');
   const [status, setStatus] = useState(null);
@@ -892,11 +912,7 @@ function ActivityLog({ customerId, customerEmail, context, crmUrl: crmLink }) {
   }, [open, customerId, customerEmail]);
 
   const user = context?.user;
-  // Some Help Scout profiles carry a placeholder surname like "." — including
-  // it produces authors called "Kat .", so drop parts with no letters in them.
-  const authorName = [user?.firstName, user?.lastName]
-    .filter((part) => /\p{L}/u.test(String(part || '')))
-    .join(' ');
+  const authorName = helpScoutAuthorName(user);
   const conversationId = context?.conversation?.id;
 
   if (!customerId) return null;
@@ -972,17 +988,20 @@ function ActivityLog({ customerId, customerEmail, context, crmUrl: crmLink }) {
         ) : (
           <span className="groupTitle">Activity log</span>
         )}
-        {crmLink && (
-          <a
-            className="iconButton"
-            href={crmLink}
-            rel="noreferrer"
-            target="_blank"
-            title="Open activity in CRM"
-          >
-            <span aria-hidden="true">&rarr;</span>
-          </a>
-        )}
+        <span className="rowActions">
+          <TrtlLink href={trtlUrl} label="Open Activity Log in TRTL" />
+          {crmLink && (
+            <a
+              className="iconButton"
+              href={crmLink}
+              rel="noreferrer"
+              target="_blank"
+              title="Open activity in CRM"
+            >
+              <span aria-hidden="true">&rarr;</span>
+            </a>
+          )}
+        </span>
       </div>
 
       {!ACTIVITY_WRITE_ENABLED || !open ? null : (
@@ -1071,6 +1090,7 @@ function LeadRow({ lead }) {
           <button className="chevronButton" onClick={() => setExpanded(!expanded)} title="Booking notes">
             {expanded ? '▲' : '▼'}
           </button>
+          <TrtlLink href={lead.trtlUrl} label="Open lead in TRTL" />
           <ExternalLink href={crmUrl(lead)} label="Open lead in CRM" />
         </div>
       </div>
@@ -1146,6 +1166,8 @@ function TripGroup({ rows, title, defaultOpen = false }) {
 function NotesEditor({ recordId, recordType, initialNotes, placeholder }) {
   const [notes, setNotes] = useState(initialNotes || '');
   const [saveStatus, setSaveStatus] = useState(null);
+  // Sent so the server can credit the note in the guest's Activity Log.
+  const user = useContext(HelpScoutUser);
 
   async function handleSave() {
     setSaveStatus('saving');
@@ -1153,7 +1175,13 @@ function NotesEditor({ recordId, recordType, initialNotes, placeholder }) {
       const res = await apiFetch('/api/airtable', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ recordId, recordType, notes }),
+        body: JSON.stringify({
+          recordId,
+          recordType,
+          notes,
+          authorName: helpScoutAuthorName(user),
+          authorEmail: user?.email,
+        }),
       });
       const body = await res.json();
       if (!res.ok) throw new Error(body.details || body.error || 'Failed');
@@ -1213,6 +1241,7 @@ function BookingRow({ booking }) {
           <button className="chevronButton" onClick={() => setExpanded(!expanded)} title="Booking notes">
             {expanded ? '▲' : '▼'}
           </button>
+          <TrtlLink href={booking.trtlUrl} label="Open booking in TRTL" />
           <ExternalLink href={crmUrl(booking)} label="Open booking in CRM" />
         </div>
       </div>
@@ -1740,6 +1769,19 @@ function ExternalLink({ href, label }) {
   return (
     <a className="rowLink" href={href} rel="noreferrer" target="_blank" title={label}>
       &rarr;
+    </a>
+  );
+}
+
+/**
+ * "TRTL" link beside the Stacker arrow while the team moves across. Hidden
+ * when the API didn't send a TRTL address (e.g. an older API deploy).
+ */
+function TrtlLink({ href, label }) {
+  if (!href) return null;
+  return (
+    <a className="rowLink trtlLink" href={href} rel="noreferrer" target="_blank" title={label}>
+      TRTL
     </a>
   );
 }

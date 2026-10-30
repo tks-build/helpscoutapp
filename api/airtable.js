@@ -1,5 +1,6 @@
 import Airtable from 'airtable';
 import { requireSessionIfEnabled } from '../lib/session.js';
+import { trtlActivity, trtlBaseUrl, trtlConfigured } from '../lib/trtl.js';
 
 const {
   AIRTABLE_API_KEY,
@@ -196,13 +197,39 @@ function getLeadGroup(status) {
   return 'open';
 }
 
+/**
+ * Logs a saved Booking Note to the guest's Activity Log in TRTL, tagged with
+ * the lead's or booking's trip (TRTL reads that from the record). Matches
+ * TRTL's own rule: only a changed, non-empty note is logged. Never fails the
+ * save — the note is already in Airtable. Returns whether it was logged.
+ */
+async function logBookingNote({ type, id, notes, previous, authorName, authorEmail }) {
+  const next = String(notes || '').trim();
+  if (!trtlConfigured() || !next || next === String(previous ?? '').trim()) return false;
+  try {
+    await trtlActivity({
+      body: {
+        kind: 'booking-note',
+        ...(type === 'lead' ? { leadId: id } : { bookingId: id }),
+        body: next,
+        authorName: String(authorName || '').trim() || 'Unknown',
+        ...(authorEmail ? { authorEmail: String(authorEmail).trim() } : {}),
+      },
+    });
+    return true;
+  } catch (error) {
+    console.error('Activity log: booking note not logged:', error.message);
+    return false;
+  }
+}
+
 export default async function handler(req, res) {
   // No-op until REQUIRE_SESSION=true is set in Vercel. See lib/session.js.
   if (!requireSessionIfEnabled(req, res)) return undefined;
   if (req.method === 'POST') {
-    const { bookingId, recordId, recordType, notes } = req.body || {};
+    const { bookingId, recordId, recordType, notes, authorName, authorEmail } = req.body || {};
 
-    // Activity now lives in Postgres — see api/activity.js. Kept as an
+    // Activity now lives in TRTL — see api/activity.js. Kept as an
     // explicit error rather than silently falling through, in case an older
     // frontend is still deployed and pointing here.
     if (recordType === 'activity') {
@@ -224,13 +251,21 @@ export default async function handler(req, res) {
       return sendJson(res, 500, { error: 'Airtable environment variables are not configured' });
     }
 
+    let previous = null;
     try {
       const base = new Airtable({ apiKey: AIRTABLE_API_KEY }).base(AIRTABLE_BASE_ID);
+      // Read the old note first (only when the Activity Log is connected), so
+      // an unchanged save isn't logged. One extra Airtable call per save.
+      if (trtlConfigured()) {
+        previous = String((await base(tableName).find(id)).get(target.field()) || '');
+      }
       await base(tableName).update(id, { [target.field()]: notes || '' });
-      return sendJson(res, 200, { ok: true });
     } catch (error) {
       return sendJson(res, 500, { error: 'Failed to save notes', details: getErrorMessage(error) });
     }
+
+    const logged = await logBookingNote({ type, id, notes, previous, authorName, authorEmail });
+    return sendJson(res, 200, { ok: true, logged });
   }
 
   if (req.method !== 'GET') {
@@ -433,6 +468,10 @@ async function shapeProfile(base, customer, email, mailboxId) {
     // Stacker addresses its record tabs with a fragment. Kept here beside the
     // base URL so the whole pattern changes in one place when TRTL lands.
     crmActivityUrl: `${CRM_BASE_URL}/crm/customers/view/cus_${customer.id}#Activity`,
+    // TRTL, shown beside the Stacker links during the changeover. TRTL uses
+    // the same Airtable record ids, so no lookups are needed.
+    trtlUrl: `${trtlBaseUrl()}/guests/${customer.id}`,
+    trtlActivityUrl: `${trtlBaseUrl()}/guests/${customer.id}?tab=activity`,
     calendlyUrl: buildCalendlyUrl(mailboxId, fields['Client Email'] || email),
 
     // --- SF "Good to know" card -------------------------------------------
@@ -668,6 +707,7 @@ function shapeLeads(records, tripMap) {
         notes: firstValue(fields[L.notes]) || '',
         group: getLeadGroup(status),
         crmUrl: `${CRM_BASE_URL}/crm/booking-crm/view/bcr_${record.id}`,
+        trtlUrl: `${trtlBaseUrl()}/leads/${record.id}`,
       };
     })
     .sort((a, b) => b.dateAddedTimestamp - a.dateAddedTimestamp);
@@ -699,6 +739,7 @@ function shapeBookings(records, tripMap, coordinatorMap, managerNameById) {
       endTimestamp: endDate?.getTime() || 0,
       group,
       crmUrl: `${CRM_BASE_URL}/crm/bookings/view/boo_${record.id}`,
+      trtlUrl: `${trtlBaseUrl()}/bookings/${record.id}`,
 
       bookingType: firstValue(fields[B.bookingType]),
       roommateRequest: firstValue(fields[B.roommateRequest]),
